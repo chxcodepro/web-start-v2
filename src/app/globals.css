@@ -128,7 +128,10 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
 .group-sidebar::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,.88); box-shadow: 0 0 10px rgba(255,255,255,.4); transition: opacity 120ms ease-out; }
 .group-sidebar:hover, .group-sidebar:focus-within, .group-sidebar.drag-active { width: 138px; padding: 6px; background: rgba(225,232,237,.15); backdrop-filter: blur(18px) saturate(125%); -webkit-backdrop-filter: blur(18px) saturate(125%); }
 .group-sidebar:hover::before, .group-sidebar:focus-within::before, .group-sidebar.drag-active::before { opacity: 0; }
-.group-sidebar nav { min-height: 100%; display: grid; align-content: center; gap: 3px; opacity: 0; pointer-events: none; transition: opacity 120ms ease-out; }
+.group-sidebar nav { height: 100%; min-height: 0; display: grid; align-content: safe center; gap: 3px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.34) transparent; opacity: 0; pointer-events: none; transition: opacity 120ms ease-out; }
+.group-sidebar nav::-webkit-scrollbar { width: 4px; }
+.group-sidebar nav::-webkit-scrollbar-track { background: transparent; }
+.group-sidebar nav::-webkit-scrollbar-thumb { border-radius: 4px; background: rgba(255,255,255,.34); }
 .group-sidebar:hover nav, .group-sidebar:focus-within nav, .group-sidebar.drag-active nav { opacity: 1; pointer-events: auto; }
 .group-sidebar nav a { min-height: 38px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0; border-radius: 10px; color: rgba(255,255,255,.9); font-size: 12px; font-weight: 650; text-shadow: 0 1px 5px rgba(0,0,0,.48); white-space: nowrap; overflow: hidden; }
 .group-sidebar nav a:hover { background: rgba(255,255,255,.22); color: #fff; }
@@ -467,7 +470,7 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
   .search-submit { width: 48px; height: 48px; }
   .group-sidebar, .group-sidebar:hover, .group-sidebar:focus-within, .group-sidebar.drag-active { position: sticky; top: 96px; z-index: 15; width: 100%; min-height: auto; padding: 7px; border: 0; border-radius: 20px; background: rgba(225,232,237,.15); transform: none; }
   .group-sidebar::before { display: none; }
-  .group-sidebar nav { display: flex; overflow-x: auto; padding-bottom: 2px; opacity: 1; pointer-events: auto; }
+  .group-sidebar nav { height: auto; min-height: auto; display: flex; overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; opacity: 1; pointer-events: auto; }
   .group-sidebar nav a { flex: 0 0 auto; justify-content: flex-start; padding: 0 12px; }
   .group-sidebar nav a > span { max-width: 150px; opacity: 1; }
   .home-layout:has(.group-sidebar:hover) .group-content, .home-layout:has(.group-sidebar:focus-within) .group-content, .home-layout:has(.group-sidebar.drag-active) .group-content { margin-left: 0; }
