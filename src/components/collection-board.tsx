@@ -84,6 +84,10 @@ function updatedLabel(value: string | null | undefined) {
   return Number.isNaN(date.getTime()) ? "更新时间未知" : `${updateDateFormatter.format(date)} 更新`;
 }
 
+function repositoryName(fullName: string) {
+  return fullName.split("/").filter(Boolean).at(-1) ?? fullName;
+}
+
 function startTitleScroll(event: ReactMouseEvent<HTMLElement>) {
   const title = event.currentTarget.querySelector<HTMLElement>(".card-title");
   if (!title) return;
@@ -127,7 +131,7 @@ function normalize(kind: BoardKind, groups: SourceGroups): BoardGroup[] {
     items: group.items.map((item) => ({
       id: item.id,
       groupId: item.groupId,
-      title: item.fullName,
+      title: repositoryName(item.fullName),
       canonicalTitle: item.fullName,
       href: item.htmlUrl,
       description: item.description ?? "",
@@ -505,7 +509,7 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
       if (kind === "bookmark") await api("PATCH", { entity: "bookmark", id: item.id, groupId, title, url: href, faviconUrl: href === item.href ? undefined : null, description, tags: nextTags, isPublic });
       else await api("PATCH", { entity: "star", id: item.id, groupId, displayName: "", note, tags: nextTags, isPublic });
       const targetGroup = selectedGroup;
-      const resolvedTitle = kind === "github" ? item.canonicalTitle ?? item.title : title;
+      const resolvedTitle = kind === "github" ? repositoryName(item.canonicalTitle ?? item.title) : title;
       setGroups((current) => {
         const without = current.map((group) => ({ ...group, items: group.items.filter((candidate) => candidate.id !== item.id) }));
         return without.map((group) => group.id === targetGroup ? { ...group, items: [...group.items, { ...item, groupId, title: resolvedTitle, href, description, note, tags: nextTags, isPublic, iconUrl: kind === "bookmark" && href !== item.href ? bookmarkIcon(href, null) : item.iconUrl }] } : group);
@@ -614,7 +618,7 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
 	                <strong className={kind === "bookmark" ? "card-title" : "repo-name"}>{kind === "bookmark" ? <span className="card-title-text">{item.title}</span> : item.title}</strong>
                 {kind === "github" && <>
                   <span className="star-card-description">{item.note || item.description || item.canonicalTitle || "暂无项目说明"}</span>
-	                  <span className="star-inline-meta">{item.title !== item.canonicalTitle ? item.canonicalTitle : ""}<span><Clock3 size={12} aria-hidden="true" />{updatedLabel(item.updatedAt)}</span></span>
+	                  <span className="star-inline-meta"><span><Clock3 size={12} aria-hidden="true" />{updatedLabel(item.updatedAt)}</span></span>
                 </>}
               </span>
             </a>
