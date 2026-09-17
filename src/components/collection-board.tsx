@@ -2,8 +2,8 @@
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type FormEvent, type MouseEvent as ReactMouseEvent } from "react";
 import {
-  ArrowDown, ArrowDownUp, ArrowLeft, ArrowRight, Check, CheckSquare, ChevronDown, ClipboardPaste, Clock3, Edit3, FolderInput,
-  Github, GripVertical, LoaderCircle, MessageSquareText, MoreHorizontal, Plus, Search, Settings2, Square, Trash2, X
+  ArrowDown, ArrowDownUp, ArrowLeft, ArrowRight, Check, CheckSquare, ChevronDown, ClipboardPaste, Clock3, Download, Edit3, FileArchive, FolderInput,
+  Github, GripVertical, LoaderCircle, MoreHorizontal, Plus, Search, Settings2, Square, Trash2, X
 } from "lucide-react";
 import { BookmarkFavicon } from "@/components/bookmark-favicon";
 import { GroupSidebar } from "@/components/group-sidebar";
@@ -37,11 +37,37 @@ type BoardGroup = {
   items: BoardItem[];
 };
 
+type GithubDownloadFile = {
+  id: string;
+  name: string;
+  size: number | null;
+  contentType: string;
+  kind: "asset" | "source";
+  downloadUrl: string;
+};
+
+type GithubDownloadVersion = {
+  id: string;
+  name: string;
+  tagName: string;
+  publishedAt: string | null;
+  prerelease: boolean;
+  files: GithubDownloadFile[];
+};
+
+type GithubDownloadCatalog = {
+  repository: string;
+  defaultBranch: string;
+  hasReleases: boolean;
+  versions: GithubDownloadVersion[];
+};
+
 type DialogState =
   | { type: "add-group" }
   | { type: "add-bookmark"; groupId: string }
   | { type: "move" }
   | { type: "details"; itemId: string }
+  | { type: "download"; itemId: string }
   | null;
 
 const STAR_PAGE_SIZE = 40;
@@ -86,6 +112,14 @@ function updatedLabel(value: string | null | undefined) {
 
 function repositoryName(fullName: string) {
   return fullName.split("/").filter(Boolean).at(-1) ?? fullName;
+}
+
+function fileSizeLabel(size: number | null) {
+  if (size === null) return "大小由 GitHub 生成";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
 function startTitleScroll(event: ReactMouseEvent<HTMLElement>) {
@@ -181,14 +215,20 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
   const [detailsGroupDraft, setDetailsGroupDraft] = useState("");
   const [bookmarkDraft, setBookmarkDraft] = useState({ title: "", url: "", faviconUrl: "" });
   const [bookmarkLookup, setBookmarkLookup] = useState(false);
+  const [downloadCatalog, setDownloadCatalog] = useState<GithubDownloadCatalog | null>(null);
+  const [downloadLoading, setDownloadLoading] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+  const [downloadVersionId, setDownloadVersionId] = useState("");
+  const [downloadFileId, setDownloadFileId] = useState("");
   const [draggedItem, setDraggedItem] = useState<{ ids: string[]; sourceGroupIds: string[] } | null>(null);
   const [draggedGroup, setDraggedGroup] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const cardNodes = useRef(new Map<string, HTMLElement>());
   const metadataRequest = useRef(0);
+  const downloadRequest = useRef(0);
 
-  const closeDialog = useCallback(() => { metadataRequest.current += 1; setDialog(null); setMessage(""); setBookmarkLookup(false); }, []);
+  const closeDialog = useCallback(() => { metadataRequest.current += 1; downloadRequest.current += 1; setDialog(null); setMessage(""); setBookmarkLookup(false); setDownloadLoading(false); }, []);
 
   const visibleGroups = useMemo(() => {
     const term = deferredQuery.trim().toLowerCase();
@@ -291,6 +331,37 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
     setDetailsGroupDraft("");
     setDialog({ type: "details", itemId: item.id });
     setMessage("");
+  }
+
+  async function loadGithubDownloads(item: BoardItem) {
+    const repository = item.canonicalTitle;
+    if (!repository) { setDownloadError("缺少 GitHub 仓库名称"); return; }
+    const requestId = ++downloadRequest.current;
+    setDownloadLoading(true);
+    setDownloadError("");
+    try {
+      const response = await fetch(`/api/github/releases?repo=${encodeURIComponent(repository)}`, { cache: "no-store" });
+      const result = await response.json() as GithubDownloadCatalog & { error?: string };
+      if (!response.ok) throw new Error(result.error || "获取 Release 失败");
+      if (downloadRequest.current !== requestId) return;
+      const firstVersion = result.versions[0];
+      setDownloadCatalog(result);
+      setDownloadVersionId(firstVersion?.id ?? "");
+      setDownloadFileId(firstVersion?.files[0]?.id ?? "");
+    } catch (error) {
+      if (downloadRequest.current === requestId) setDownloadError(error instanceof Error ? error.message : "获取 Release 失败");
+    } finally {
+      if (downloadRequest.current === requestId) setDownloadLoading(false);
+    }
+  }
+
+  function openDownload(item: BoardItem) {
+    setDownloadCatalog(null);
+    setDownloadVersionId("");
+    setDownloadFileId("");
+    setDownloadError("");
+    setDialog({ type: "download", itemId: item.id });
+    void loadGithubDownloads(item);
   }
 
   async function createDetailsGroup() {
@@ -543,6 +614,9 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
   }
 
   const detailsItem = dialog?.type === "details" ? findItem(dialog.itemId) : null;
+  const downloadItem = dialog?.type === "download" ? findItem(dialog.itemId) : null;
+  const downloadVersion = downloadCatalog?.versions.find((version) => version.id === downloadVersionId) ?? downloadCatalog?.versions[0] ?? null;
+  const downloadFile = downloadVersion?.files.find((file) => file.id === downloadFileId) ?? downloadVersion?.files[0] ?? null;
   const allVisibleIds = visibleGroups.flatMap((group) => group.items.map((item) => item.id));
   const allVisibleSelected = allVisibleIds.length > 0 && allVisibleIds.every((id) => selected.has(id));
 
@@ -626,7 +700,7 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
               {kind === "bookmark" ? <>
                 <button type="button" aria-label={`编辑 ${item.title}`} onClick={() => beginItemEdit(item)}><Edit3 size={15} /></button>
                 <button type="button" aria-label={`${item.title} 更多设置`} onClick={() => openDetails(item)}><MoreHorizontal size={16} /></button>
-              </> : <button type="button" aria-label={`修改 ${item.title} 的备注`} onClick={() => openDetails(item)}><MessageSquareText size={16} /></button>}
+              </> : <button type="button" aria-label={`下载 ${item.title} 的 Release`} title="下载 Release" onClick={() => openDownload(item)}><Download size={16} /></button>}
               <button type="button" aria-label={`前移 ${item.title}`} disabled={itemIndex === 0} onClick={() => void moveItemByOffset(group.id, item.id, -1)}><ArrowLeft size={14} /></button>
               <button type="button" aria-label={`后移 ${item.title}`} disabled={itemIndex === group.items.length - 1} onClick={() => void moveItemByOffset(group.id, item.id, 1)}><ArrowRight size={14} /></button>
             </div>}
@@ -667,13 +741,30 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
         {kind === "github" && <label>备注<textarea data-autofocus name="note" maxLength={500} defaultValue={detailsItem.note || detailsItem.description} rows={4} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); if (!detailsCreatingGroup && !busy) event.currentTarget.form?.requestSubmit(); } }} /></label>}
         <div className="dialog-group-field">
           {detailsCreatingGroup
-            ? <label>新分组<input autoFocus aria-label="新分组名称" value={detailsGroupDraft} maxLength={40} placeholder="输入名称后按回车" onChange={(event) => setDetailsGroupDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void createDetailsGroup(); } if (event.key === "Escape") { event.preventDefault(); setDetailsCreatingGroup(false); setDetailsGroupDraft(""); } }} /></label>
-            : <label>分组<select name="groupId" value={detailsGroupId || detailsItem.groupId || "ungrouped"} onChange={(event) => setDetailsGroupId(event.target.value)}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>}
-          {kind === "github" && <button type="button" className="dialog-group-add" disabled={busy} onClick={() => { setDetailsCreatingGroup((value) => !value); setDetailsGroupDraft(""); setMessage(""); }}>{detailsCreatingGroup ? <X size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}{detailsCreatingGroup ? "取消" : "新建分组"}</button>}
+            ? <div className="dialog-group-create"><label>新分组<input autoFocus aria-label="新分组名称" value={detailsGroupDraft} maxLength={40} placeholder="输入名称后按回车" onChange={(event) => setDetailsGroupDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void createDetailsGroup(); } if (event.key === "Escape") { event.preventDefault(); setDetailsCreatingGroup(false); setDetailsGroupDraft(""); } }} /></label><button type="button" className="dialog-group-confirm" disabled={busy || !detailsGroupDraft.trim()} onClick={() => void createDetailsGroup()}><Check size={16} aria-hidden="true" />确认</button><button type="button" className="dialog-group-add" disabled={busy} onClick={() => { setDetailsCreatingGroup(false); setDetailsGroupDraft(""); setMessage(""); }}><X size={16} aria-hidden="true" />取消</button></div>
+            : <><label>分组<select name="groupId" value={detailsGroupId || detailsItem.groupId || "ungrouped"} onChange={(event) => setDetailsGroupId(event.target.value)}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>{kind === "github" && <button type="button" className="dialog-group-add" disabled={busy} onClick={() => { setDetailsCreatingGroup(true); setDetailsGroupDraft(""); setMessage(""); }}><Plus size={16} aria-hidden="true" />新建分组</button>}</>}
         </div>
         <label>标签<input name="tags" defaultValue={detailsItem.tags.join(", ")} /></label><label className="dialog-check"><input type="checkbox" name="isPublic" defaultChecked={detailsItem.isPublic} />公开显示</label>
         <div className="dialog-actions split"><button type="button" className="danger-button" disabled={busy} onClick={() => void removeItem(detailsItem)}><Trash2 size={16} />{kind === "bookmark" ? "删除" : "取消 Star"}</button><span /><button type="button" className="soft-button" onClick={closeDialog}>取消</button><button type="submit" className="primary-button" disabled={busy || detailsCreatingGroup}><Check size={17} />保存</button></div>{message && <p className="dialog-message" role="status">{message}</p>}
       </form>
+    </ManageDialog>}
+
+    {downloadItem && <ManageDialog
+      open
+      title={`下载 ${downloadItem.title}`}
+      description={<a className="dialog-heading-link" href={downloadItem.href} target="_blank" rel="noreferrer">{downloadItem.canonicalTitle || downloadItem.href}</a>}
+      onClose={closeDialog}
+    >
+      <div className="download-dialog">
+        {downloadLoading && <div className="download-loading" role="status"><LoaderCircle className="spin" size={22} aria-hidden="true" /><span>正在读取 GitHub Releases…</span></div>}
+        {!downloadLoading && downloadError && <div className="download-error" role="alert"><p>{downloadError}</p><button type="button" className="soft-button" onClick={() => void loadGithubDownloads(downloadItem)}>重试</button></div>}
+        {!downloadLoading && downloadCatalog && <>
+          {!downloadCatalog.hasReleases && <p className="download-notice">此仓库没有 Release，已提供默认分支 <strong>{downloadCatalog.defaultBranch}</strong> 的源代码。</p>}
+          <label className="download-version-field">发布版本<select data-autofocus value={downloadVersion?.id ?? ""} onChange={(event) => { const next = downloadCatalog.versions.find((version) => version.id === event.target.value); setDownloadVersionId(event.target.value); setDownloadFileId(next?.files[0]?.id ?? ""); }}>{downloadCatalog.versions.map((version) => <option key={version.id} value={version.id}>{version.name} · {version.tagName}{version.prerelease ? "（预发布）" : ""}</option>)}</select></label>
+          {downloadVersion && <fieldset className="download-files"><legend>选择下载文件</legend>{downloadVersion.files.map((file) => <label key={file.id} className={`download-file-option ${downloadFile?.id === file.id ? "selected" : ""}`}><input type="radio" name="downloadFile" value={file.id} checked={downloadFile?.id === file.id} onChange={() => setDownloadFileId(file.id)} /><span className="download-file-icon"><FileArchive size={18} aria-hidden="true" /></span><span className="download-file-copy"><strong>{file.name}</strong><small>{file.kind === "source" ? "源码包" : file.contentType || "Release 文件"} · {fileSizeLabel(file.size)}</small></span></label>)}</fieldset>}
+          <div className="dialog-actions"><button type="button" className="soft-button" onClick={closeDialog}>取消</button>{downloadFile && <a className="primary-button" href={downloadFile.downloadUrl} target="_blank" rel="noreferrer"><Download size={17} aria-hidden="true" />开始下载</a>}</div>
+        </>}
+      </div>
     </ManageDialog>}
   </>;
 }

@@ -381,10 +381,13 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
 .dialog-form input:focus, .dialog-form select:focus, .dialog-form textarea:focus { border-color: rgba(115,174,255,.86); box-shadow: 0 0 0 3px rgba(82,151,255,.18); }
 .dialog-form select option { color: #162029; background: #f5f7f8; }
 .dialog-group-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; }
-.dialog-group-add { min-height: 44px; border: 1px solid rgba(151,198,255,.28); border-radius: 12px; padding: 0 13px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: rgba(238,247,255,.94); background: rgba(82,151,255,.16); cursor: pointer; transition: background-color 150ms ease-out, border-color 150ms ease-out, transform 120ms ease-out; }
-.dialog-group-add:hover:not(:disabled) { border-color: rgba(178,215,255,.56); background: rgba(100,167,255,.28); }
-.dialog-group-add:active:not(:disabled) { transform: scale(.98); }
-.dialog-group-add:disabled { opacity: .5; cursor: wait; }
+.dialog-group-create { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: end; gap: 8px; }
+.dialog-group-add, .dialog-group-confirm { min-height: 44px; border: 1px solid rgba(151,198,255,.28); border-radius: 12px; padding: 0 13px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: rgba(238,247,255,.94); background: rgba(82,151,255,.16); cursor: pointer; transition: background-color 150ms ease-out, border-color 150ms ease-out, transform 120ms ease-out; }
+.dialog-group-confirm { border-color: rgba(151,198,255,.46); background: rgba(82,151,255,.34); }
+.dialog-group-add:hover:not(:disabled), .dialog-group-confirm:hover:not(:disabled) { border-color: rgba(178,215,255,.56); background: rgba(100,167,255,.28); }
+.dialog-group-confirm:hover:not(:disabled) { background: rgba(100,167,255,.48); }
+.dialog-group-add:active:not(:disabled), .dialog-group-confirm:active:not(:disabled) { transform: scale(.98); }
+.dialog-group-add:disabled, .dialog-group-confirm:disabled { opacity: .5; cursor: wait; }
 .clipboard-fill-button { width: 100%; min-height: 44px; border: 1px solid rgba(151,198,255,.32); border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; color: rgba(238,247,255,.96); background: rgba(82,151,255,.18); cursor: pointer; transition: background-color 150ms ease-out, border-color 150ms ease-out, box-shadow 150ms ease-out, transform 120ms ease-out; }
 .clipboard-fill-button:hover:not(:disabled) { border-color: rgba(178,215,255,.58); background: rgba(100,167,255,.3); box-shadow: 0 0 22px rgba(74,157,255,.16); }
 .clipboard-fill-button:active:not(:disabled) { transform: scale(.99); }
@@ -395,6 +398,26 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
 .dialog-actions.split { justify-content: initial; }
 .dialog-actions.split > span { flex: 1; }
 .dialog-message { margin: 0; color: #ffd4cf; font-size: 13px; }
+.download-dialog { display: grid; gap: 16px; }
+.download-loading { min-height: 180px; display: grid; place-items: center; align-content: center; gap: 10px; color: rgba(255,255,255,.72); font-size: 13px; }
+.download-error { min-height: 150px; display: grid; place-items: center; align-content: center; gap: 12px; text-align: center; }
+.download-error p { margin: 0; color: #ffd4cf; font-size: 13px; }
+.download-notice { margin: 0; padding: 11px 13px; border: 1px solid rgba(151,198,255,.22); border-radius: 12px; color: rgba(224,239,255,.84); background: rgba(82,151,255,.12); font-size: 12px; line-height: 1.55; }
+.download-version-field { display: grid; gap: 7px; color: rgba(255,255,255,.78); font-size: 13px; font-weight: 650; }
+.download-version-field select { width: 100%; min-height: 44px; border: 1px solid rgba(255,255,255,.18); border-radius: 12px; padding: 9px 11px; color: white; background: rgba(8,13,19,.46); outline: none; }
+.download-version-field select:focus { border-color: rgba(115,174,255,.86); box-shadow: 0 0 0 3px rgba(82,151,255,.18); }
+.download-version-field option { color: #162029; background: #f5f7f8; }
+.download-files { min-width: 0; max-height: 320px; margin: 0; padding: 0 4px 0 0; border: 0; display: grid; gap: 7px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.28) transparent; }
+.download-files legend { margin-bottom: 8px; padding: 0; color: rgba(255,255,255,.66); font-size: 12px; font-weight: 700; }
+.download-file-option { min-width: 0; min-height: 58px; padding: 9px 11px; border: 1px solid rgba(255,255,255,.11); border-radius: 13px; display: flex; align-items: center; gap: 10px; color: rgba(255,255,255,.8); background: rgba(255,255,255,.05); cursor: pointer; transition: background-color 150ms ease-out, border-color 150ms ease-out, transform 120ms ease-out; }
+.download-file-option:hover { border-color: rgba(151,198,255,.34); background: rgba(82,151,255,.13); }
+.download-file-option.selected { border-color: rgba(151,198,255,.55); background: rgba(82,151,255,.22); box-shadow: inset 0 0 0 1px rgba(151,198,255,.08); }
+.download-file-option:active { transform: scale(.995); }
+.download-file-option input { width: 17px; height: 17px; flex: 0 0 17px; accent-color: #75a7ff; }
+.download-file-icon { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; display: grid; place-items: center; color: rgba(212,232,255,.92); background: rgba(82,151,255,.18); }
+.download-file-copy { min-width: 0; display: grid; gap: 3px; }
+.download-file-copy strong { overflow-wrap: anywhere; color: rgba(255,255,255,.94); font-size: 13px; }
+.download-file-copy small { color: rgba(255,255,255,.55); font-size: 11px; font-weight: 500; }
 @keyframes dialog-backdrop-in { from { opacity: 0; } }
 @keyframes dialog-panel-in { from { opacity: 0; transform: translateY(10px) scale(.97); } }
 
@@ -499,6 +522,8 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
   .manage-dialog-body { padding: 16px; }
   .dialog-actions.split { flex-wrap: wrap; }
   .dialog-group-field { grid-template-columns: 1fr; }
+  .dialog-group-create { grid-template-columns: 1fr 1fr; }
+  .dialog-group-create label { grid-column: 1 / -1; }
   .dialog-group-add { width: 100%; }
   .clipboard-page { padding-top: 18px; place-items: start center; }
   .clipboard-unlock { padding: 28px 18px; }
