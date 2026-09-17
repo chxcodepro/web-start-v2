@@ -654,7 +654,14 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
       <form className="dialog-form" onSubmit={submitMove}><label>目标分组<select data-autofocus name="groupId" required>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><div className="dialog-actions"><button type="button" className="soft-button" onClick={closeDialog}>取消</button><button type="submit" className="primary-button" disabled={busy || !selected.size}><FolderInput size={17} />移动</button></div>{message && <p className="dialog-message" role="status">{message}</p>}</form>
     </ManageDialog>
 
-    {detailsItem && <ManageDialog open title={kind === "bookmark" ? "书签设置" : "项目备注与设置"} description={detailsItem.canonicalTitle || detailsItem.href} onClose={closeDialog}>
+    {detailsItem && <ManageDialog
+      open
+      title={kind === "bookmark" ? "书签设置" : "项目备注与设置"}
+      description={kind === "github"
+        ? <a className="dialog-heading-link" href={detailsItem.href} target="_blank" rel="noreferrer">{detailsItem.canonicalTitle || detailsItem.href}</a>
+        : detailsItem.canonicalTitle || detailsItem.href}
+      onClose={closeDialog}
+    >
       <form className="dialog-form" onSubmit={(event) => void submitDetails(event, detailsItem)}>
         {kind === "bookmark" && <><label>名称<input data-autofocus name="title" required maxLength={80} defaultValue={detailsItem.title} /></label><label>网址<input name="url" type="url" required defaultValue={detailsItem.href} /></label><label>描述<input name="description" maxLength={300} defaultValue={detailsItem.description} /></label></>}
         {kind === "github" && <label>备注<textarea data-autofocus name="note" maxLength={500} defaultValue={detailsItem.note || detailsItem.description} rows={4} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); if (!detailsCreatingGroup && !busy) event.currentTarget.form?.requestSubmit(); } }} /></label>}

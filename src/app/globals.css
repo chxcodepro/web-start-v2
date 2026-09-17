@@ -368,6 +368,9 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
 .manage-dialog-heading { position: sticky; top: 0; z-index: 2; padding: 20px 20px 14px; display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; background: rgba(25,31,40,.78); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border-bottom: 1px solid rgba(255,255,255,.1); }
 .manage-dialog-heading h2 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
 .manage-dialog-heading p { margin: 5px 0 0; color: rgba(255,255,255,.6); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.dialog-heading-link { color: rgba(191,220,255,.88); text-decoration: underline; text-decoration-color: rgba(147,194,255,.4); text-underline-offset: 3px; transition: color 150ms ease-out, text-decoration-color 150ms ease-out; }
+.dialog-heading-link:hover { color: #fff; text-decoration-color: rgba(191,220,255,.92); }
+.dialog-heading-link:focus-visible { border-radius: 3px; outline-color: rgba(147,194,255,.82); }
 .dialog-close { width: 40px; height: 40px; flex: 0 0 40px; border: 0; border-radius: 12px; display: grid; place-items: center; background: rgba(255,255,255,.09); color: white; cursor: pointer; }
 .dialog-close:hover { background: rgba(255,255,255,.18); }
 .manage-dialog-body { padding: 20px; }

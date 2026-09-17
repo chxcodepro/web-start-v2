@@ -6,7 +6,7 @@ import { X } from "lucide-react";
 export function ManageDialog({ open, title, description, onClose, children }: {
   open: boolean;
   title: string;
-  description?: string;
+  description?: ReactNode;
   onClose: () => void;
   children: ReactNode;
 }) {
