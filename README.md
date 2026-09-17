@@ -12,7 +12,7 @@
 - GitHub OAuth 单一管理员登录
 - GitHub Star 手动同步与 Vercel 每日定时同步
 - GitHub Star 本地分组、自定义名称、标签、备注及公开状态
-- GitHub Release 版本与文件选择、代理加速下载；无 Release 时下载默认分支源码
+- GitHub Release 版本与文件选择、代理加速下载；访客可下载公开 Star，无 Release 时下载默认分支源码
 - 无确认直接取消 Star，失败自动回滚，成功后可撤销
 - Supabase 仅由服务端访问；公开页面使用 Next.js 缓存
 - 未配置外部服务时自动使用演示数据，仍可构建和预览
@@ -77,7 +77,7 @@ npm run dev
 - GitHub 上已经移除的 Star 会在本地标记为归档
 - 后台取消 Star 时先请求 GitHub，成功后更新数据库；数据库失败会尝试恢复 GitHub 状态
 
-Release 下载默认使用 `https://gh-proxy.com/` 加速。可通过 `GITHUB_DOWNLOAD_PROXY` 更换代理前缀；设为 `direct` 则直接使用 GitHub 下载地址。Release 元数据通过登录保护的服务端接口读取公开 GitHub API，GitHub Token 不会发送给浏览器或下载代理。
+Release 下载默认使用 `https://gh-proxy.com/` 加速。可通过 `GITHUB_DOWNLOAD_PROXY` 更换代理前缀；设为 `direct` 则直接使用 GitHub 下载地址。访客只能查询当前公开展示的 Star，管理员可查询全部 Star；Release 元数据由服务端读取并缓存五分钟，GitHub Token 不会发送给浏览器或下载代理。
 
 ## 4. 部署到 Vercel
 

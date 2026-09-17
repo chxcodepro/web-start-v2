@@ -44,10 +44,14 @@ type GithubReleaseResponse = {
   }>;
 };
 
-const githubHeaders = {
-  Accept: "application/vnd.github+json",
-  "X-GitHub-Api-Version": "2022-11-28"
-};
+function githubHeaders() {
+  const token = process.env.GITHUB_TOKEN?.trim();
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+}
 
 function acceleratedUrl(originalUrl: string) {
   const original = new URL(originalUrl);
@@ -74,7 +78,7 @@ function sourceFiles(fullName: string, ref: string): GithubDownloadFile[] {
 }
 
 async function githubJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${githubApiBase}${path}`, { headers: githubHeaders, next: { revalidate: 300 } });
+  const response = await fetch(`${githubApiBase}${path}`, { headers: githubHeaders(), next: { revalidate: 300 } });
   if (!response.ok) {
     if (response.status === 404) throw new Error("GitHub 仓库不存在或无法访问");
     throw new Error(`GitHub Release 查询失败（${response.status}）`);

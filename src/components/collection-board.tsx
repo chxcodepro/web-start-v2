@@ -696,6 +696,7 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
                 </>}
               </span>
             </a>
+            {kind === "github" && !managing && <button type="button" className="star-download-button" aria-label={`下载 ${item.title} 的 Release`} title="下载 Release" onClick={() => openDownload(item)}><Download size={16} /></button>}
             {managing && <div className="card-manage-actions">
               {kind === "bookmark" ? <>
                 <button type="button" aria-label={`编辑 ${item.title}`} onClick={() => beginItemEdit(item)}><Edit3 size={15} /></button>
