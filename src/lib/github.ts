@@ -18,7 +18,7 @@ type StarredResponse = {
   starred_at: string;
   repo: {
     id: number; full_name: string; html_url: string; description: string | null; language: string | null;
-    stargazers_count: number; updated_at: string; owner: { avatar_url: string | null };
+    stargazers_count: number; updated_at: string; pushed_at: string | null; owner: { avatar_url: string | null };
   };
 };
 
@@ -46,9 +46,9 @@ export async function syncGithubStars() {
       owner_avatar_url: repo.owner.avatar_url,
       is_active: true,
       starred_at,
-      // Keep GitHub's repository update time in the existing metadata timestamp
-      // column. The overall synchronization time is still returned by this function.
-      synced_at: repo.updated_at
+      // For a start page, the last code push is more useful than GitHub's generic
+      // metadata update time, which can change without repository code changing.
+      synced_at: repo.pushed_at ?? repo.updated_at
     }));
     const { error } = await db.from("github_stars").upsert(rows, { onConflict: "github_repo_id", ignoreDuplicates: false });
     if (error) throw error;

@@ -2,7 +2,7 @@
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type FormEvent, type MouseEvent as ReactMouseEvent } from "react";
 import {
-  ArrowDown, ArrowLeft, ArrowRight, Check, CheckSquare, ClipboardPaste, Clock3, Edit3, FolderInput,
+  ArrowDown, ArrowDownUp, ArrowLeft, ArrowRight, Check, CheckSquare, ChevronDown, ClipboardPaste, Clock3, Edit3, FolderInput,
   Github, GripVertical, LoaderCircle, MessageSquareText, MoreHorizontal, Plus, Search, Settings2, Square, Trash2, X
 } from "lucide-react";
 import { BookmarkFavicon } from "@/components/bookmark-favicon";
@@ -13,6 +13,7 @@ import type { BookmarkGroup, GithubGroup } from "@/lib/types";
 
 type BoardKind = "bookmark" | "github";
 type SourceGroups = BookmarkGroup[] | GithubGroup[];
+type StarSortMode = "manual" | "updated-desc" | "updated-asc";
 
 type BoardItem = {
   id: string;
@@ -161,6 +162,7 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
 }) {
   const [groups, setGroups] = useState(() => normalize(kind, sourceGroups));
   const [query, setQuery] = useState("");
+  const [starSort, setStarSort] = useState<StarSortMode>("manual");
   const deferredQuery = useDeferredValue(query);
   const [visibleLimits, setVisibleLimits] = useState<Record<string, number>>({});
   const [managing, setManaging] = useState(false);
@@ -186,12 +188,20 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
 
   const visibleGroups = useMemo(() => {
     const term = deferredQuery.trim().toLowerCase();
-    if (!term) return groups;
-    return groups.map((group) => ({
-      ...group,
-      items: group.items.filter((item) => `${item.title} ${item.canonicalTitle ?? ""} ${item.description} ${item.note} ${item.language ?? ""} ${item.tags.join(" ")}`.toLowerCase().includes(term))
-    })).filter((group) => group.items.length > 0);
-  }, [groups, deferredQuery]);
+    return groups.map((group) => {
+      let items = term ? group.items.filter((item) => `${item.title} ${item.canonicalTitle ?? ""} ${item.description} ${item.note} ${item.language ?? ""} ${item.tags.join(" ")}`.toLowerCase().includes(term)) : group.items;
+      if (kind === "github" && starSort !== "manual") {
+        items = [...items].sort((left, right) => {
+          const leftTime = left.updatedAt ? Date.parse(left.updatedAt) : Number.NaN;
+          const rightTime = right.updatedAt ? Date.parse(right.updatedAt) : Number.NaN;
+          if (Number.isNaN(leftTime)) return Number.isNaN(rightTime) ? 0 : 1;
+          if (Number.isNaN(rightTime)) return -1;
+          return starSort === "updated-desc" ? rightTime - leftTime : leftTime - rightTime;
+        });
+      }
+      return { ...group, items };
+    }).filter((group) => !term || group.items.length > 0);
+  }, [groups, deferredQuery, kind, starSort]);
 
   async function api(method: string, body: unknown, endpoint = "/api/manage/collection") {
     const response = await fetch(endpoint, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -280,6 +290,7 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
   }
 
   async function createDetailsGroup() {
+    if (busy) return;
     const nextName = detailsGroupDraft.trim();
     if (!nextName) { setMessage("分组名称不能为空"); return; }
     setBusy(true); setMessage("正在创建分组…");
@@ -534,11 +545,12 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
   return <>
     {kind === "github" && <section className="star-toolbar" aria-label="GitHub Star 工具栏">
       <label className="star-search glass"><Search size={18} aria-hidden="true" /><span className="sr-only">搜索 GitHub Star</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索 GitHub Star" autoComplete="off" /></label>
-      <SyncStarsButton compact />
+      <label className="star-sort glass"><ArrowDownUp size={16} aria-hidden="true" /><span className="sr-only">GitHub Star 排序方式</span><select value={starSort} disabled={managing} onChange={(event) => setStarSort(event.target.value as StarSortMode)} aria-label="GitHub Star 排序方式"><option value="manual">自定义排序</option><option value="updated-desc">最近更新</option><option value="updated-asc">最早更新</option></select><ChevronDown size={15} aria-hidden="true" /></label>
+      {canManage && <SyncStarsButton compact />}
     </section>}
 
     {canManage && <div className={`collection-toolbar ${managing ? "active" : ""}`}>
-      <button type="button" className="toolbar-main" aria-pressed={managing} onClick={() => { setManaging((value) => !value); setSelected(new Set()); setEditingItem(null); setEditingGroup(null); }}><Settings2 size={17} aria-hidden="true" />{managing ? "完成管理" : "管理"}</button>
+      <button type="button" className="toolbar-main" aria-pressed={managing} onClick={() => { if (!managing) setStarSort("manual"); setManaging((value) => !value); setSelected(new Set()); setEditingItem(null); setEditingGroup(null); }}><Settings2 size={17} aria-hidden="true" />{managing ? "完成管理" : "管理"}</button>
       {managing && <>
         <button type="button" onClick={() => setDialog({ type: "add-group" })}><Plus size={16} aria-hidden="true" />分组</button>
         <button type="button" onClick={() => setSelected(allVisibleSelected ? new Set() : new Set(allVisibleIds))}>{allVisibleSelected ? <CheckSquare size={16} /> : <Square size={16} />}{allVisibleSelected ? "取消全选" : "全选"}</button>
@@ -641,14 +653,15 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
     {detailsItem && <ManageDialog open title={kind === "bookmark" ? "书签设置" : "项目备注与设置"} description={detailsItem.canonicalTitle || detailsItem.href} onClose={closeDialog}>
       <form className="dialog-form" onSubmit={(event) => void submitDetails(event, detailsItem)}>
         {kind === "bookmark" && <><label>名称<input data-autofocus name="title" required maxLength={80} defaultValue={detailsItem.title} /></label><label>网址<input name="url" type="url" required defaultValue={detailsItem.href} /></label><label>描述<input name="description" maxLength={300} defaultValue={detailsItem.description} /></label></>}
-        {kind === "github" && <label>备注<textarea data-autofocus name="note" maxLength={500} defaultValue={detailsItem.note} rows={4} /></label>}
+        {kind === "github" && <label>备注<textarea data-autofocus name="note" maxLength={500} defaultValue={detailsItem.note || detailsItem.description} rows={4} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); if (!detailsCreatingGroup && !busy) event.currentTarget.form?.requestSubmit(); } }} /></label>}
         <div className="dialog-group-field">
-          <label>分组<select name="groupId" value={detailsGroupId || detailsItem.groupId || "ungrouped"} onChange={(event) => setDetailsGroupId(event.target.value)}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
-          {kind === "github" && <button type="button" className="dialog-group-add" disabled={busy} onClick={() => { setDetailsCreatingGroup((value) => !value); setMessage(""); }}><Plus size={16} aria-hidden="true" />新建分组</button>}
+          {detailsCreatingGroup
+            ? <label>新分组<input autoFocus aria-label="新分组名称" value={detailsGroupDraft} maxLength={40} placeholder="输入名称后按回车" onChange={(event) => setDetailsGroupDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void createDetailsGroup(); } if (event.key === "Escape") { event.preventDefault(); setDetailsCreatingGroup(false); setDetailsGroupDraft(""); } }} /></label>
+            : <label>分组<select name="groupId" value={detailsGroupId || detailsItem.groupId || "ungrouped"} onChange={(event) => setDetailsGroupId(event.target.value)}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>}
+          {kind === "github" && <button type="button" className="dialog-group-add" disabled={busy} onClick={() => { setDetailsCreatingGroup((value) => !value); setDetailsGroupDraft(""); setMessage(""); }}>{detailsCreatingGroup ? <X size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}{detailsCreatingGroup ? "取消" : "新建分组"}</button>}
         </div>
-        {kind === "github" && detailsCreatingGroup && <div className="dialog-group-create"><input autoFocus aria-label="新分组名称" value={detailsGroupDraft} maxLength={40} placeholder="输入分组名称" onChange={(event) => setDetailsGroupDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void createDetailsGroup(); } if (event.key === "Escape") { event.preventDefault(); setDetailsCreatingGroup(false); setDetailsGroupDraft(""); } }} /><button type="button" disabled={busy || !detailsGroupDraft.trim()} onClick={() => void createDetailsGroup()}><Check size={16} aria-hidden="true" />创建</button><button type="button" aria-label="取消创建分组" disabled={busy} onClick={() => { setDetailsCreatingGroup(false); setDetailsGroupDraft(""); }}><X size={16} /></button></div>}
         <label>标签<input name="tags" defaultValue={detailsItem.tags.join(", ")} /></label><label className="dialog-check"><input type="checkbox" name="isPublic" defaultChecked={detailsItem.isPublic} />公开显示</label>
-        <div className="dialog-actions split"><button type="button" className="danger-button" disabled={busy} onClick={() => void removeItem(detailsItem)}><Trash2 size={16} />{kind === "bookmark" ? "删除" : "取消 Star"}</button><span /><button type="button" className="soft-button" onClick={closeDialog}>取消</button><button type="submit" className="primary-button" disabled={busy}><Check size={17} />保存</button></div>{message && <p className="dialog-message" role="status">{message}</p>}
+        <div className="dialog-actions split"><button type="button" className="danger-button" disabled={busy} onClick={() => void removeItem(detailsItem)}><Trash2 size={16} />{kind === "bookmark" ? "删除" : "取消 Star"}</button><span /><button type="button" className="soft-button" onClick={closeDialog}>取消</button><button type="submit" className="primary-button" disabled={busy || detailsCreatingGroup}><Check size={17} />保存</button></div>{message && <p className="dialog-message" role="status">{message}</p>}
       </form>
     </ManageDialog>}
   </>;
