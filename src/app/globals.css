@@ -369,6 +369,14 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
 .dialog-form textarea { resize: vertical; line-height: 1.55; }
 .dialog-form input:focus, .dialog-form select:focus, .dialog-form textarea:focus { border-color: rgba(115,174,255,.86); box-shadow: 0 0 0 3px rgba(82,151,255,.18); }
 .dialog-form select option { color: #162029; background: #f5f7f8; }
+.dialog-group-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; }
+.dialog-group-add, .dialog-group-create button { min-height: 44px; border: 1px solid rgba(151,198,255,.28); border-radius: 12px; padding: 0 13px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: rgba(238,247,255,.94); background: rgba(82,151,255,.16); cursor: pointer; transition: background-color 150ms ease-out, border-color 150ms ease-out, transform 120ms ease-out; }
+.dialog-group-add:hover:not(:disabled), .dialog-group-create button:hover:not(:disabled) { border-color: rgba(178,215,255,.56); background: rgba(100,167,255,.28); }
+.dialog-group-add:active:not(:disabled), .dialog-group-create button:active:not(:disabled) { transform: scale(.98); }
+.dialog-group-add:disabled, .dialog-group-create button:disabled { opacity: .5; cursor: wait; }
+.dialog-group-create { display: grid; grid-template-columns: minmax(0, 1fr) auto 44px; gap: 8px; animation: dialog-inline-create-in 150ms ease-out; }
+.dialog-group-create button:last-child { width: 44px; padding: 0; color: rgba(255,255,255,.76); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.14); }
+@keyframes dialog-inline-create-in { from { opacity: 0; transform: translateY(-5px); } }
 .clipboard-fill-button { width: 100%; min-height: 44px; border: 1px solid rgba(151,198,255,.32); border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; color: rgba(238,247,255,.96); background: rgba(82,151,255,.18); cursor: pointer; transition: background-color 150ms ease-out, border-color 150ms ease-out, box-shadow 150ms ease-out, transform 120ms ease-out; }
 .clipboard-fill-button:hover:not(:disabled) { border-color: rgba(178,215,255,.58); background: rgba(100,167,255,.3); box-shadow: 0 0 22px rgba(74,157,255,.16); }
 .clipboard-fill-button:active:not(:disabled) { transform: scale(.99); }
@@ -479,6 +487,10 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
   .manage-dialog-heading { padding: 17px 16px 12px; }
   .manage-dialog-body { padding: 16px; }
   .dialog-actions.split { flex-wrap: wrap; }
+  .dialog-group-field { grid-template-columns: 1fr; }
+  .dialog-group-add { width: 100%; }
+  .dialog-group-create { grid-template-columns: minmax(0, 1fr) 44px; }
+  .dialog-group-create button:nth-of-type(1) { grid-column: 1 / -1; }
   .clipboard-page { padding-top: 18px; place-items: start center; }
   .clipboard-unlock { padding: 28px 18px; }
   .clipboard-heading { padding: 19px 17px 15px; }

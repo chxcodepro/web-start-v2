@@ -170,6 +170,9 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
   const [groupDraft, setGroupDraft] = useState("");
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [itemDraft, setItemDraft] = useState({ title: "", href: "" });
+  const [detailsGroupId, setDetailsGroupId] = useState("");
+  const [detailsCreatingGroup, setDetailsCreatingGroup] = useState(false);
+  const [detailsGroupDraft, setDetailsGroupDraft] = useState("");
   const [bookmarkDraft, setBookmarkDraft] = useState({ title: "", url: "", faviconUrl: "" });
   const [bookmarkLookup, setBookmarkLookup] = useState(false);
   const [draggedItem, setDraggedItem] = useState<{ ids: string[]; sourceGroupIds: string[] } | null>(null);
@@ -266,6 +269,36 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
     setEditingItem(item.id);
     setItemDraft({ title: item.title, href: item.href });
     setMessage("");
+  }
+
+  function openDetails(item: BoardItem) {
+    setDetailsGroupId(item.groupId ?? "ungrouped");
+    setDetailsCreatingGroup(false);
+    setDetailsGroupDraft("");
+    setDialog({ type: "details", itemId: item.id });
+    setMessage("");
+  }
+
+  async function createDetailsGroup() {
+    const nextName = detailsGroupDraft.trim();
+    if (!nextName) { setMessage("分组名称不能为空"); return; }
+    setBusy(true); setMessage("正在创建分组…");
+    try {
+      const result = await api("POST", { entity: "group", kind, name: nextName });
+      const created: BoardGroup = { id: String(result.group.id), name: String(result.group.name), isPublic: Boolean(result.group.isPublic), items: [] };
+      setGroups((current) => {
+        const ungroupedIndex = current.findIndex((group) => group.id === "ungrouped");
+        if (ungroupedIndex < 0) return [...current, created];
+        const next = [...current];
+        next.splice(ungroupedIndex, 0, created);
+        return next;
+      });
+      setDetailsGroupId(created.id);
+      setDetailsCreatingGroup(false);
+      setDetailsGroupDraft("");
+      setMessage(`已创建并选中「${created.name}」`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "创建分组失败"); }
+    finally { setBusy(false); }
   }
 
   async function saveInlineItem(item: BoardItem) {
@@ -576,8 +609,8 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
             {managing && <div className="card-manage-actions">
               {kind === "bookmark" ? <>
                 <button type="button" aria-label={`编辑 ${item.title}`} onClick={() => beginItemEdit(item)}><Edit3 size={15} /></button>
-                <button type="button" aria-label={`${item.title} 更多设置`} onClick={() => { setDialog({ type: "details", itemId: item.id }); setMessage(""); }}><MoreHorizontal size={16} /></button>
-              </> : <button type="button" aria-label={`修改 ${item.title} 的备注`} onClick={() => { setDialog({ type: "details", itemId: item.id }); setMessage(""); }}><MessageSquareText size={16} /></button>}
+                <button type="button" aria-label={`${item.title} 更多设置`} onClick={() => openDetails(item)}><MoreHorizontal size={16} /></button>
+              </> : <button type="button" aria-label={`修改 ${item.title} 的备注`} onClick={() => openDetails(item)}><MessageSquareText size={16} /></button>}
               <button type="button" aria-label={`前移 ${item.title}`} disabled={itemIndex === 0} onClick={() => void moveItemByOffset(group.id, item.id, -1)}><ArrowLeft size={14} /></button>
               <button type="button" aria-label={`后移 ${item.title}`} disabled={itemIndex === group.items.length - 1} onClick={() => void moveItemByOffset(group.id, item.id, 1)}><ArrowRight size={14} /></button>
             </div>}
@@ -609,7 +642,11 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
       <form className="dialog-form" onSubmit={(event) => void submitDetails(event, detailsItem)}>
         {kind === "bookmark" && <><label>名称<input data-autofocus name="title" required maxLength={80} defaultValue={detailsItem.title} /></label><label>网址<input name="url" type="url" required defaultValue={detailsItem.href} /></label><label>描述<input name="description" maxLength={300} defaultValue={detailsItem.description} /></label></>}
         {kind === "github" && <label>备注<textarea data-autofocus name="note" maxLength={500} defaultValue={detailsItem.note} rows={4} /></label>}
-        <label>分组<select name="groupId" defaultValue={detailsItem.groupId ?? "ungrouped"}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+        <div className="dialog-group-field">
+          <label>分组<select name="groupId" value={detailsGroupId || detailsItem.groupId || "ungrouped"} onChange={(event) => setDetailsGroupId(event.target.value)}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+          {kind === "github" && <button type="button" className="dialog-group-add" disabled={busy} onClick={() => { setDetailsCreatingGroup((value) => !value); setMessage(""); }}><Plus size={16} aria-hidden="true" />新建分组</button>}
+        </div>
+        {kind === "github" && detailsCreatingGroup && <div className="dialog-group-create"><input autoFocus aria-label="新分组名称" value={detailsGroupDraft} maxLength={40} placeholder="输入分组名称" onChange={(event) => setDetailsGroupDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void createDetailsGroup(); } if (event.key === "Escape") { event.preventDefault(); setDetailsCreatingGroup(false); setDetailsGroupDraft(""); } }} /><button type="button" disabled={busy || !detailsGroupDraft.trim()} onClick={() => void createDetailsGroup()}><Check size={16} aria-hidden="true" />创建</button><button type="button" aria-label="取消创建分组" disabled={busy} onClick={() => { setDetailsCreatingGroup(false); setDetailsGroupDraft(""); }}><X size={16} /></button></div>}
         <label>标签<input name="tags" defaultValue={detailsItem.tags.join(", ")} /></label><label className="dialog-check"><input type="checkbox" name="isPublic" defaultChecked={detailsItem.isPublic} />公开显示</label>
         <div className="dialog-actions split"><button type="button" className="danger-button" disabled={busy} onClick={() => void removeItem(detailsItem)}><Trash2 size={16} />{kind === "bookmark" ? "删除" : "取消 Star"}</button><span /><button type="button" className="soft-button" onClick={closeDialog}>取消</button><button type="submit" className="primary-button" disabled={busy}><Check size={17} />保存</button></div>{message && <p className="dialog-message" role="status">{message}</p>}
       </form>
