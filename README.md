@@ -88,6 +88,10 @@ Release 下载默认使用 `https://gh-proxy.com/` 加速。可通过 `GITHUB_DO
 
 [`vercel.json`](vercel.json) 已将 Functions 固定到 `sin1`，并每天北京时间 03:17（UTC 19:17）同步 GitHub Star。Vercel 会用 `CRON_SECRET` 保护 Cron 请求。
 
+当前 Vercel 项目 `start-web` 已关联 GitHub 仓库 `chxcodepro/web-start-v2`，生产分支为 `main`。推送到 `main` 会自动构建，构建成功后更新正式站点 `https://start.chxpro.com`；其他分支使用 Preview 部署，无需再手动运行生产发布命令。
+
+自动部署依赖 Vercel 的 GitHub 集成和仓库访问权限。构建失败时先查看 Vercel Deployment 的日志，不要重复运行 CLI 发布；手动部署仅用于明确需要的应急发布。数据库和 OAuth 等凭据继续保存在 Vercel 环境变量中，不写入仓库或 GitHub Actions。
+
 ## 验证命令
 
 ```bash
