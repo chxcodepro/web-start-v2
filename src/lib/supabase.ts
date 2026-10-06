@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { fetchWithRetry } from "@/lib/retry-fetch";
 
 function isModernApiKey(value: string) {
   return value.startsWith("sb_secret_") || value.startsWith("sb_publishable_");
@@ -17,7 +18,7 @@ function apiKeyOnlyFetch(apiKey: string): typeof fetch {
       headers.delete("authorization");
     }
 
-    return fetch(input, { ...init, headers });
+    return fetchWithRetry(input, { ...init, headers });
   };
 }
 
@@ -31,6 +32,7 @@ export function getSupabaseAdmin() {
   if (!url || !key) throw new Error("Supabase 尚未配置");
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
-    global: isModernApiKey(key) ? { fetch: apiKeyOnlyFetch(key) } : undefined
+    db: { retry: false },
+    global: { fetch: isModernApiKey(key) ? apiKeyOnlyFetch(key) : fetchWithRetry }
   });
 }

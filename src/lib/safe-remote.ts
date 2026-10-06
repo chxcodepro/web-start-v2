@@ -35,8 +35,9 @@ export async function fetchPublicUrl(initialUrl: string, init: RequestInit, vali
   for (let redirects = 0; redirects <= 3; redirects += 1) {
     if (validate && !validate(url)) throw new Error("不允许的远程地址");
     const response = await fetch(url, { ...init, redirect: "manual" });
-    if (response.status < 300 || response.status >= 400) return { response, url };
+    if (![301, 302, 303, 307, 308].includes(response.status)) return { response, url };
     const location = response.headers.get("location");
+    await response.body?.cancel();
     if (!location || redirects === 3) throw new Error("远程地址重定向过多");
     url = await assertPublicHttpUrl(new URL(location, url).toString());
   }

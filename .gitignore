@@ -6,5 +6,9 @@ node_modules/
 *.tsbuildinfo
 npm-debug.log*
 .oce-client/
+.codegraph/
+artifacts/loading-recovery/
+artifacts/loading-dev*.log
+artifacts/tmp/loading-smoke-*/
 
 .vercel

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SiteHeader } from "@/components/site-header";
+import { BackgroundLoader } from "@/components/background-loader";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -9,5 +10,5 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const authEnabled = Boolean(process.env.AUTH_SECRET && process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET && process.env.GITHUB_OWNER_LOGIN);
-  return <html lang="zh-CN"><body><SiteHeader authEnabled={authEnabled} />{children}</body></html>;
+  return <html lang="zh-CN"><body><BackgroundLoader /><SiteHeader authEnabled={authEnabled} />{children}</body></html>;
 }
