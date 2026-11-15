@@ -71,7 +71,8 @@ type DialogState =
   | null;
 
 const STAR_PAGE_SIZE = 40;
-const updateDateFormatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
+// 固定时区：服务端（Vercel 为 UTC）与浏览器格式化结果一致，避免水合不匹配
+const updateDateFormatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Asia/Shanghai" });
 
 function AutoLoadMore({ remaining, onLoad }: { remaining: number; onLoad: () => void }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
