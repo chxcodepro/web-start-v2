@@ -180,6 +180,10 @@ function normalize(kind: BoardKind, groups: SourceGroups): BoardGroup[] {
   }));
 }
 
+function isErrorMessage(value: string) {
+  return value.includes("失败") || value.includes("不能") || value.includes("请");
+}
+
 function tagsFrom(value: FormDataEntryValue | null) {
   return String(value ?? "").split(/[,，]/).map((item) => item.trim()).filter(Boolean).slice(0, 20);
 }
@@ -230,6 +234,13 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
   const downloadRequest = useRef(0);
 
   const closeDialog = useCallback(() => { metadataRequest.current += 1; downloadRequest.current += 1; setDialog(null); setMessage(""); setBookmarkLookup(false); setDownloadLoading(false); }, []);
+
+  // 右下角提示自动收起；对话框打开时由对话框自己展示消息
+  useEffect(() => {
+    if (!message || dialog) return;
+    const timer = window.setTimeout(() => setMessage(""), isErrorMessage(message) ? 6000 : 2600);
+    return () => window.clearTimeout(timer);
+  }, [message, dialog]);
 
   const visibleGroups = useMemo(() => {
     const term = deferredQuery.trim().toLowerCase();
@@ -628,15 +639,15 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
       {canManage && <SyncStarsButton compact />}
     </section>}
 
-    {canManage && <div className={`collection-toolbar ${managing ? "active" : ""}`}>
-      <button type="button" className="toolbar-main" aria-pressed={managing} onClick={() => { if (!managing) setStarSort("manual"); setManaging((value) => !value); setSelected(new Set()); setEditingItem(null); setEditingGroup(null); }}><Settings2 size={17} aria-hidden="true" />{managing ? "完成管理" : "管理"}</button>
-      {managing && <>
+    {canManage && <>
+      <button type="button" className={`dock-button manage-dock ${managing ? "active" : ""}`} aria-pressed={managing} aria-label={managing ? "完成管理" : "管理"} title={managing ? "完成管理" : "管理"} onClick={() => { if (!managing) setStarSort("manual"); setManaging((value) => !value); setSelected(new Set()); setEditingItem(null); setEditingGroup(null); }}>{managing ? <Check size={19} aria-hidden="true" /> : <Settings2 size={18} aria-hidden="true" />}</button>
+      {managing && <div className="manage-actions" role="toolbar" aria-label="管理操作">
         <button type="button" onClick={() => setDialog({ type: "add-group" })}><Plus size={16} aria-hidden="true" />分组</button>
-        <button type="button" onClick={() => setSelected(allVisibleSelected ? new Set() : new Set(allVisibleIds))}>{allVisibleSelected ? <CheckSquare size={16} /> : <Square size={16} />}{allVisibleSelected ? "取消全选" : "全选"}</button>
-        <button type="button" disabled={!selected.size} onClick={() => setDialog({ type: "move" })}><FolderInput size={16} aria-hidden="true" />移动{selected.size ? ` ${selected.size}` : ""}</button>
-      </>}
-      <span className={message.includes("失败") || message.includes("不能") || message.includes("请") ? "toolbar-message error" : "toolbar-message"} role="status">{message}</span>
-    </div>}
+        <button type="button" onClick={() => setSelected(allVisibleSelected ? new Set() : new Set(allVisibleIds))}>{allVisibleSelected ? <CheckSquare size={16} aria-hidden="true" /> : <Square size={16} aria-hidden="true" />}{allVisibleSelected ? "取消全选" : "全选"}</button>
+        <button type="button" disabled={!selected.size} onClick={() => setDialog({ type: "move" })}><FolderInput size={16} aria-hidden="true" />移动{selected.size > 0 && <span className="manage-actions-count">{selected.size}</span>}</button>
+      </div>}
+      <p className={`manage-toast ${message && !dialog ? "visible" : ""} ${isErrorMessage(message) ? "error" : ""}`} role="status">{dialog ? "" : message}</p>
+    </>}
 
     {visibleGroups.length ? <div className={`home-layout collection-board ${managing ? "is-managing" : ""} ${canManage ? "can-drag" : ""}`}>
       <GroupSidebar groups={visibleGroups.map(({ id, name }) => ({ id, name }))} canDropItems={Boolean(draggedItem)} onItemDrop={(groupId) => void dropItem(groupId)} />

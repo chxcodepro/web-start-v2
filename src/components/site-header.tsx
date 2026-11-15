@@ -3,17 +3,18 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bookmark, Clipboard, Github, LogIn, LogOut } from "lucide-react";
+import { Bookmark, Clipboard, Github, Power, UserRound } from "lucide-react";
 import { signIn, signOut } from "next-auth/react";
 
 export function SiteHeader({ authEnabled }: { authEnabled: boolean }) {
   const pathname = usePathname();
-  const [loggedIn, setLoggedIn] = useState(false);
+  // null 表示会话尚未确认：此时不显示图标，避免登录图标闪成退出图标
+  const [loggedIn, setLoggedIn] = useState<boolean | null>(authEnabled ? null : false);
   const [navHidden, setNavHidden] = useState(false);
 
   useEffect(() => {
     if (!authEnabled) return;
-    fetch("/api/auth/session").then((response) => response.json()).then((session) => setLoggedIn(Boolean(session?.user))).catch(() => setLoggedIn(false));
+    fetch("/api/auth/session", { signal: AbortSignal.timeout(8000) }).then((response) => response.json()).then((session) => setLoggedIn(Boolean(session?.user))).catch(() => setLoggedIn(false));
   }, [authEnabled]);
 
   useEffect(() => {
@@ -47,10 +48,12 @@ export function SiteHeader({ authEnabled }: { authEnabled: boolean }) {
         </nav>
       </div>
     </header>
-    {loggedIn
-      ? <button type="button" className="login-dock login-only" aria-label="退出登录" title="退出登录" onClick={() => void signOut({ callbackUrl: "/" })}><LogOut size={18} aria-hidden="true" /></button>
+    {loggedIn === null
+      ? <span className="dock-button login-dock is-pending" aria-hidden="true" />
+      : loggedIn
+      ? <button type="button" className="dock-button login-dock is-signed-in" aria-label="退出登录" title="退出登录" onClick={() => void signOut({ callbackUrl: "/" })}><Power size={18} aria-hidden="true" /></button>
       : (authEnabled
-      ? <button type="button" className="login-dock login-only" aria-label="使用 GitHub 登录" title="登录" onClick={() => void signIn("github", { callbackUrl: "/" })}><LogIn size={18} aria-hidden="true" /></button>
-      : <Link href="/login" className="login-dock login-only" aria-label="登录" title="登录"><LogIn size={18} aria-hidden="true" /></Link>)}
+      ? <button type="button" className="dock-button login-dock" aria-label="使用 GitHub 登录" title="登录" onClick={() => void signIn("github", { callbackUrl: "/" })}><UserRound size={19} aria-hidden="true" /></button>
+      : <Link href="/login" className="dock-button login-dock" aria-label="登录" title="登录"><UserRound size={19} aria-hidden="true" /></Link>)}
   </>;
 }

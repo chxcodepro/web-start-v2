@@ -7,7 +7,10 @@ export function SearchSkeleton() {
   return <section className="hero" aria-hidden="true">
     <div className="search-wrap">
       <div className="search-box glass skeleton-surface">
-        <span className="engine-picker"><span className="skeleton-block skeleton-engine" /></span>
+        <span className="engine-switch">
+          <span className="engine-option"><span className="skeleton-block skeleton-engine-icon" /></span>
+          <span className="engine-option"><span className="skeleton-block skeleton-engine-icon" /></span>
+        </span>
         <span className="skeleton-placeholder skeleton-search-text">搜索或输入网址</span>
       </div>
     </div>

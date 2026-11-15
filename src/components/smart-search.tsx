@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Bookmark, Check, ChevronDown, Globe2, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { Bookmark, Globe2, Search } from "lucide-react";
+import { BookmarkFavicon } from "@/components/bookmark-favicon";
 
 type Engine = "bing" | "google";
 type LocalItem = { title: string; url: string; group: string; tags: string[] };
@@ -11,6 +12,16 @@ const engineUrls: Record<Engine, string> = {
   bing: "https://www.bing.com/search?q=",
   google: "https://www.google.com/search?q="
 };
+
+// 与书签卡片共用图标代理；Bing 网页声明的图标是放大镜，指定 favicon.ico 才是「b」字标
+const engines = ([
+  { id: "bing", name: "Bing", site: "https://www.bing.com/", favicon: "https://www.bing.com/favicon.ico" },
+  { id: "google", name: "Google", site: "https://www.google.com/", favicon: null }
+] as const).map(({ favicon, ...engine }) => {
+  const params = new URLSearchParams({ type: "bookmark", site: engine.site });
+  if (favicon) params.set("url", favicon);
+  return { ...engine, icon: `/api/icon?${params}` };
+});
 
 function directUrl(raw: string) {
   const value = raw.trim();
@@ -31,7 +42,8 @@ export function SmartSearch({ bookmarks: bookmarkSource }: { bookmarks: Promise<
   const [query, setQuery] = useState("");
   const [remote, setRemote] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
-  const [engineOpen, setEngineOpen] = useState(false);
+  // 首次读取本地偏好时直接定位滑块，只有用户切换时才播放滑动动画
+  const [engineAnimated, setEngineAnimated] = useState(false);
   const [active, setActive] = useState(-1);
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -65,7 +77,7 @@ export function SmartSearch({ bookmarks: bookmarkSource }: { bookmarks: Promise<
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) { setOpen(false); setEngineOpen(false); }
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
@@ -94,37 +106,41 @@ export function SmartSearch({ bookmarks: bookmarkSource }: { bookmarks: Promise<
     setOpen(false);
   }
 
-  function chooseEngine(value: Engine) {
-    setEngine(value);
-    setRemote([]);
-    localStorage.setItem("start-page-search-engine", value);
-    setEngineOpen(false);
-    setOpen(true);
-    inputRef.current?.focus();
+  function chooseEngine(value: Engine, focusInput = true) {
+    setEngineAnimated(true);
+    if (value !== engine) {
+      setEngine(value);
+      setRemote([]);
+      localStorage.setItem("start-page-search-engine", value);
+    }
+    if (focusInput) { setOpen(true); inputRef.current?.focus(); }
+  }
+
+  // 单选组键盘约定：方向键切换引擎并把焦点留在切换器上
+  function moveEngine(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    event.preventDefault();
+    const step = event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
+    const index = engines.findIndex((item) => item.id === engine);
+    const next = engines[(index + step + engines.length) % engines.length].id;
+    chooseEngine(next, false);
+    event.currentTarget.querySelector<HTMLButtonElement>(`[data-engine="${next}"]`)?.focus();
   }
 
   return (
-    <div className={`search-wrap ${open || engineOpen ? "search-active" : ""}`} ref={rootRef}>
+    <div className={`search-wrap ${open ? "search-active" : ""}`} ref={rootRef}>
       <form className="search-box glass" role="search" onSubmit={(event) => { event.preventDefault(); if (query.trim()) navigate(query, engine); }}>
-        <div className="engine-picker">
-          <button className="engine-trigger" type="button" aria-haspopup="listbox" aria-expanded={engineOpen} onClick={() => { setEngineOpen((value) => !value); setOpen(false); }}>
-            <span className={`engine-trigger-dot ${engine}`} aria-hidden="true" />
-            <span>{engine === "bing" ? "Bing" : "Google"}</span>
-            <ChevronDown className={engineOpen ? "rotated" : ""} size={16} aria-hidden="true" />
-          </button>
-          {engineOpen && <div className="engine-menu glass" role="listbox" aria-label="搜索提供商">
-            {(["bing", "google"] as const).map((value) => <button key={value} type="button" role="option" aria-selected={engine === value} onClick={() => chooseEngine(value)}>
-              <span className={`engine-option-mark ${value}`} aria-hidden="true">{value === "bing" ? "B" : "G"}</span>
-              <span className="engine-option-name">{value === "bing" ? "Bing" : "Google"}</span>
-              <span className="engine-option-state" aria-hidden="true">{engine === value && <Check size={12} />}</span>
-            </button>)}
-          </div>}
+        <div className={`engine-switch ${engineAnimated ? "is-animated" : ""}`} data-engine={engine} role="radiogroup" aria-label="搜索引擎" onKeyDown={moveEngine}>
+          <span className="engine-switch-thumb" aria-hidden="true" />
+          {engines.map((item) => <button key={item.id} type="button" role="radio" className="engine-option" data-engine={item.id} aria-checked={engine === item.id} aria-label={item.name} title={engine === item.id ? `正在使用 ${item.name}` : `切换到 ${item.name}`} tabIndex={engine === item.id ? 0 : -1} onClick={() => chooseEngine(item.id)}>
+            <BookmarkFavicon className="engine-icon" src={item.icon} title={item.name} />
+          </button>)}
         </div>
         <label className="sr-only" htmlFor="search-query">搜索或输入网址</label>
-        <input ref={inputRef} id="search-query" className="search-input" autoComplete="off" value={query} placeholder="搜索或输入网址" onFocus={() => { setOpen(true); setEngineOpen(false); }} onChange={(event) => { setQuery(event.target.value); setRemote([]); setOpen(true); setActive(-1); }} onKeyDown={(event) => {
+        <input ref={inputRef} id="search-query" className="search-input" autoComplete="off" value={query} placeholder="搜索或输入网址" onFocus={() => setOpen(true)} onChange={(event) => { setQuery(event.target.value); setRemote([]); setOpen(true); setActive(-1); }} onKeyDown={(event) => {
           if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); setActive((value) => Math.min(value + 1, suggestions.length - 1)); }
           if (event.key === "ArrowUp") { event.preventDefault(); setActive((value) => Math.max(value - 1, -1)); }
-          if (event.key === "Escape") { setOpen(false); setEngineOpen(false); setActive(-1); }
+          if (event.key === "Escape") { setOpen(false); setActive(-1); }
           if (event.key === "Enter" && active >= 0) { event.preventDefault(); choose(suggestions[active], event.shiftKey); }
           else if (event.key === "Enter" && event.shiftKey && query.trim()) { event.preventDefault(); navigate(query, engine, true); }
         }} />
