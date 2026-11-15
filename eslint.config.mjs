@@ -5,5 +5,5 @@ import nextTypescript from "eslint-config-next/typescript";
 export default defineConfig([
   ...nextVitals,
   ...nextTypescript,
-  globalIgnores([".next/**", "next-env.d.ts", ".codegraph/**", "artifacts/tmp/loading-smoke-*/**", "artifacts/loading-recovery/**"]),
+  globalIgnores([".next/**", "next-env.d.ts", ".codegraph/**", "artifacts/tmp/**", "artifacts/ai-organize/**", "artifacts/loading-recovery/**"]),
 ]);

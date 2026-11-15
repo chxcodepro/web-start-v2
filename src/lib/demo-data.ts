@@ -34,8 +34,8 @@ export const demoGithubGroups: GithubGroup[] = [
     sortOrder: 0,
     isPublic: true,
     items: [
-      { id: "demo-next", githubRepoId: 70107786, groupId: "demo-star-tools", fullName: "vercel/next.js", displayName: null, htmlUrl: "https://github.com/vercel/next.js", description: "The React Framework for the Web", language: "JavaScript", starsCount: 136000, ownerAvatarUrl: "https://github.com/vercel.png", tags: ["框架"], note: null, sortOrder: 0, isPublic: true, isActive: true, starredAt: null, syncedAt: "2026-09-12T08:00:00Z", repoUpdatedAt: "2026-09-12T08:00:00Z" },
-      { id: "demo-tailwind", githubRepoId: 106017343, groupId: "demo-star-tools", fullName: "tailwindlabs/tailwindcss", displayName: "Tailwind CSS", htmlUrl: "https://github.com/tailwindlabs/tailwindcss", description: "A utility-first CSS framework", language: "TypeScript", starsCount: 90000, ownerAvatarUrl: "https://github.com/tailwindlabs.png", tags: ["样式"], note: "快速搭建界面样式", sortOrder: 1, isPublic: true, isActive: true, starredAt: null, syncedAt: "2026-09-10T08:00:00Z", repoUpdatedAt: "2026-09-10T08:00:00Z" }
+      { id: "demo-next", githubRepoId: 70107786, groupId: "demo-star-tools", fullName: "vercel/next.js", displayName: null, htmlUrl: "https://github.com/vercel/next.js", description: "The React Framework for the Web", language: "JavaScript", topics: ["react", "nextjs", "framework"], starsCount: 136000, ownerAvatarUrl: "https://github.com/vercel.png", tags: ["框架"], note: null, sortOrder: 0, isPublic: true, isActive: true, starredAt: null, syncedAt: "2026-09-12T08:00:00Z", repoUpdatedAt: "2026-09-12T08:00:00Z" },
+      { id: "demo-tailwind", githubRepoId: 106017343, groupId: "demo-star-tools", fullName: "tailwindlabs/tailwindcss", displayName: "Tailwind CSS", htmlUrl: "https://github.com/tailwindlabs/tailwindcss", description: "A utility-first CSS framework", language: "TypeScript", topics: ["css", "tailwindcss"], starsCount: 90000, ownerAvatarUrl: "https://github.com/tailwindlabs.png", tags: ["样式"], note: "快速搭建界面样式", sortOrder: 1, isPublic: true, isActive: true, starredAt: null, syncedAt: "2026-09-10T08:00:00Z", repoUpdatedAt: "2026-09-10T08:00:00Z" }
     ]
   },
   {
@@ -45,7 +45,7 @@ export const demoGithubGroups: GithubGroup[] = [
     sortOrder: 99,
     isPublic: true,
     items: [
-      { id: "demo-lucide", githubRepoId: 454543673, groupId: "demo-star-ungrouped", fullName: "lucide-icons/lucide", displayName: null, htmlUrl: "https://github.com/lucide-icons/lucide", description: "Beautiful & consistent icon toolkit", language: "TypeScript", starsCount: 21000, ownerAvatarUrl: "https://github.com/lucide-icons.png", tags: [], note: null, sortOrder: 0, isPublic: true, isActive: true, starredAt: null, syncedAt: "2026-09-11T08:00:00Z", repoUpdatedAt: "2026-09-11T08:00:00Z" }
+      { id: "demo-lucide", githubRepoId: 454543673, groupId: "demo-star-ungrouped", fullName: "lucide-icons/lucide", displayName: null, htmlUrl: "https://github.com/lucide-icons/lucide", description: "Beautiful & consistent icon toolkit", language: "TypeScript", topics: ["icons", "svg"], starsCount: 21000, ownerAvatarUrl: "https://github.com/lucide-icons.png", tags: [], note: null, sortOrder: 0, isPublic: true, isActive: true, starredAt: null, syncedAt: "2026-09-11T08:00:00Z", repoUpdatedAt: "2026-09-11T08:00:00Z" }
     ]
   }
 ];

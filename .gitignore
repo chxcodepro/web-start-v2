@@ -9,6 +9,7 @@ npm-debug.log*
 .codegraph/
 artifacts/loading-recovery/
 artifacts/loading-dev*.log
-artifacts/tmp/loading-smoke-*/
+artifacts/tmp/
+artifacts/ai-organize/
 
 .vercel

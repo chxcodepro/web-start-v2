@@ -17,10 +17,15 @@ export async function setGithubStar(fullName: string, starred: boolean) {
 type StarredResponse = {
   starred_at: string;
   repo: {
-    id: number; full_name: string; html_url: string; description: string | null; language: string | null;
+    id: number; full_name: string; html_url: string; description: string | null; language: string | null; topics?: string[];
     stargazers_count: number; updated_at: string; pushed_at: string | null; owner: { avatar_url: string | null };
   };
 };
+
+// 数据库还没执行 003_star_topics.sql 时 PostgREST 会报缺列
+function isMissingTopicsColumn(error: { code?: string; message?: string }) {
+  return (error.code === "PGRST204" || error.code === "42703") && /topics/i.test(error.message ?? "");
+}
 
 export async function syncGithubStars() {
   const all: StarredResponse[] = [];
@@ -36,7 +41,7 @@ export async function syncGithubStars() {
   const now = new Date().toISOString();
   const repoIds = all.map((item) => item.repo.id);
   if (all.length) {
-    const rows = all.map(({ starred_at, repo }) => ({
+    const baseRows = all.map(({ starred_at, repo }) => ({
       github_repo_id: repo.id,
       full_name: repo.full_name,
       html_url: repo.html_url,
@@ -50,7 +55,14 @@ export async function syncGithubStars() {
       // metadata update time, which can change without repository code changing.
       synced_at: repo.pushed_at ?? repo.updated_at
     }));
-    const { error } = await db.from("github_stars").upsert(rows, { onConflict: "github_repo_id", ignoreDuplicates: false });
+    // topics 是给仓库分组最有用的信号，AI 整理会用到
+    const rows = baseRows.map((row, index) => ({ ...row, topics: (all[index].repo.topics ?? []).slice(0, 20) }));
+    let { error } = await db.from("github_stars").upsert(rows, { onConflict: "github_repo_id", ignoreDuplicates: false });
+    if (error && isMissingTopicsColumn(error)) {
+      // 迁移未执行时先不写 topics，避免每日同步整体失败
+      console.warn("[github] github_stars 缺少 topics 列，请执行 supabase/migrations/003_star_topics.sql");
+      ({ error } = await db.from("github_stars").upsert(baseRows, { onConflict: "github_repo_id", ignoreDuplicates: false }));
+    }
     if (error) throw error;
   }
   const { data: active, error: activeError } = await db.from("github_stars").select("github_repo_id").eq("is_active", true);

@@ -3,39 +3,20 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type FormEvent, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ArrowDown, ArrowDownUp, ArrowLeft, ArrowRight, Check, CheckSquare, ChevronDown, ClipboardPaste, Clock3, Download, Edit3, FileArchive, FolderInput,
-  Github, GripVertical, LoaderCircle, MoreHorizontal, Plus, Search, Settings2, Square, Trash2, X
+  Github, GripVertical, LoaderCircle, MoreHorizontal, Plus, Search, Settings2, Sparkles, Square, Trash2, Undo2, X
 } from "lucide-react";
+import { AiOrganizeDialog, type AiApplyResult } from "@/components/ai-organize-dialog";
 import { BookmarkFavicon } from "@/components/bookmark-favicon";
 import { GroupSidebar } from "@/components/group-sidebar";
 import { ManageDialog } from "@/components/manage-dialog";
 import { SyncStarsButton } from "@/components/sync-stars-button";
+import { applyItemMoves, insertGroups, moveRequests, revertItemMoves, sourceOrders, type BoardGroup, type BoardItem, type BoardKind, type ItemMove } from "@/lib/board-model";
 import type { BookmarkGroup, GithubGroup } from "@/lib/types";
 
-type BoardKind = "bookmark" | "github";
 type SourceGroups = BookmarkGroup[] | GithubGroup[];
 type StarSortMode = "manual" | "updated-desc" | "updated-asc";
-
-type BoardItem = {
-  id: string;
-  groupId: string | null;
-  title: string;
-  canonicalTitle?: string;
-  href: string;
-  description: string;
-  note: string;
-  tags: string[];
-  isPublic: boolean;
-  iconUrl?: string | null;
-  language?: string | null;
-  updatedAt?: string | null;
-};
-
-type BoardGroup = {
-  id: string;
-  name: string;
-  isPublic: boolean;
-  items: BoardItem[];
-};
+// AI 整理后的撤销记录；只在对应提示仍显示时可用
+type UndoRecord = { message: string; moves: ItemMove[]; orders: Record<string, string[]>; createdGroupIds: string[] };
 
 type GithubDownloadFile = {
   id: string;
@@ -68,6 +49,7 @@ type DialogState =
   | { type: "move" }
   | { type: "details"; itemId: string }
   | { type: "download"; itemId: string }
+  | { type: "ai" }
   | null;
 
 const STAR_PAGE_SIZE = 40;
@@ -229,18 +211,20 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
   const [draggedGroup, setDraggedGroup] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [undo, setUndo] = useState<UndoRecord | null>(null);
   const cardNodes = useRef(new Map<string, HTMLElement>());
   const metadataRequest = useRef(0);
   const downloadRequest = useRef(0);
 
   const closeDialog = useCallback(() => { metadataRequest.current += 1; downloadRequest.current += 1; setDialog(null); setMessage(""); setBookmarkLookup(false); setDownloadLoading(false); }, []);
 
-  // 右下角提示自动收起；对话框打开时由对话框自己展示消息
+  // 右下角提示自动收起；对话框打开时由对话框自己展示消息。带撤销按钮的提示多停留一会
   useEffect(() => {
     if (!message || dialog) return;
-    const timer = window.setTimeout(() => setMessage(""), isErrorMessage(message) ? 6000 : 2600);
+    const delay = undo?.message === message ? 9000 : isErrorMessage(message) ? 6000 : 2600;
+    const timer = window.setTimeout(() => { setMessage(""); setUndo(null); }, delay);
     return () => window.clearTimeout(timer);
-  }, [message, dialog]);
+  }, [message, dialog, undo]);
 
   const visibleGroups = useMemo(() => {
     const term = deferredQuery.trim().toLowerCase();
@@ -625,12 +609,56 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
     finally { setBusy(false); }
   }
 
+  function handleAiApplied(result: AiApplyResult) {
+    const withCreated = insertGroups(groups, result.created);
+    const orders = sourceOrders(withCreated, result.moves);
+    setGroupsWithMotion(applyItemMoves(withCreated, result.moves));
+    setSelected(new Set());
+    setDialog(null);
+    const text = result.error
+      ? `${result.moves.length ? `已整理 ${result.moves.length} 项，其余` : "AI 整理"}保存失败：${result.error}`
+      : `已整理 ${result.moves.length} 项`;
+    setMessage(text);
+    setUndo(result.moves.length || result.created.length ? { message: text, moves: result.moves, orders, createdGroupIds: result.created.map((group) => group.id) } : null);
+  }
+
+  async function undoAiOrganize() {
+    const record = undo;
+    if (!record || busy) return;
+    setUndo(null);
+    setBusy(true);
+    setMessage("正在撤销…");
+    const reverted: ItemMove[] = [];
+    let failure = "";
+    try {
+      const back = record.moves.map((move) => ({ itemId: move.itemId, from: move.to, to: move.from }));
+      for (const request of moveRequests(kind, revertItemMoves(groups, record.moves, record.orders), back)) {
+        await api("POST", request.body, "/api/manage/reorder");
+        reverted.push(...record.moves.filter((move) => move.from === request.target));
+      }
+    } catch (error) { failure = error instanceof Error ? error.message : "撤销失败"; }
+    let next = revertItemMoves(groups, reverted, record.orders);
+    // 全部放回后，AI 新建且已空的分组一并删除
+    for (const id of failure ? [] : record.createdGroupIds) {
+      if (next.find((group) => group.id === id)?.items.length) continue;
+      try {
+        await api("DELETE", { entity: "group", id, kind });
+        next = next.filter((group) => group.id !== id);
+      } catch {}
+    }
+    setGroupsWithMotion(next);
+    setMessage(failure ? `撤销失败：${failure}` : "已撤销");
+    setBusy(false);
+  }
+
   const detailsItem = dialog?.type === "details" ? findItem(dialog.itemId) : null;
   const downloadItem = dialog?.type === "download" ? findItem(dialog.itemId) : null;
   const downloadVersion = downloadCatalog?.versions.find((version) => version.id === downloadVersionId) ?? downloadCatalog?.versions[0] ?? null;
   const downloadFile = downloadVersion?.files.find((file) => file.id === downloadFileId) ?? downloadVersion?.files[0] ?? null;
   const allVisibleIds = visibleGroups.flatMap((group) => group.items.map((item) => item.id));
   const allVisibleSelected = allVisibleIds.length > 0 && allVisibleIds.every((id) => selected.has(id));
+  const hasItems = groups.some((group) => group.items.length > 0);
+  const undoVisible = Boolean(undo && undo.message === message && !dialog);
 
   return <>
     {kind === "github" && <section className="star-toolbar" aria-label="GitHub Star 工具栏">
@@ -645,8 +673,12 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
         <button type="button" onClick={() => setDialog({ type: "add-group" })}><Plus size={16} aria-hidden="true" />分组</button>
         <button type="button" onClick={() => setSelected(allVisibleSelected ? new Set() : new Set(allVisibleIds))}>{allVisibleSelected ? <CheckSquare size={16} aria-hidden="true" /> : <Square size={16} aria-hidden="true" />}{allVisibleSelected ? "取消全选" : "全选"}</button>
         <button type="button" disabled={!selected.size} onClick={() => setDialog({ type: "move" })}><FolderInput size={16} aria-hidden="true" />移动{selected.size > 0 && <span className="manage-actions-count">{selected.size}</span>}</button>
+        <button type="button" className="manage-ai-button" disabled={!hasItems || busy} onClick={() => { setMessage(""); setDialog({ type: "ai" }); }}><Sparkles size={16} aria-hidden="true" />AI 整理</button>
       </div>}
-      <p className={`manage-toast ${message && !dialog ? "visible" : ""} ${isErrorMessage(message) ? "error" : ""}`} role="status">{dialog ? "" : message}</p>
+      <div className={`manage-toast ${message && !dialog ? "visible" : ""} ${isErrorMessage(message) ? "error" : ""} ${undoVisible ? "has-action" : ""}`} role="status">
+        <span className="manage-toast-text">{dialog ? "" : message}</span>
+        {undoVisible && <button type="button" className="manage-toast-action" disabled={busy} onClick={() => void undoAiOrganize()}><Undo2 size={14} aria-hidden="true" />撤销</button>}
+      </div>
     </>}
 
     {visibleGroups.length ? <div className={`home-layout collection-board ${managing ? "is-managing" : ""} ${canManage ? "can-drag" : ""}`}>
@@ -761,6 +793,8 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
         <div className="dialog-actions split"><button type="button" className="danger-button" disabled={busy} onClick={() => void removeItem(detailsItem)}><Trash2 size={16} />{kind === "bookmark" ? "删除" : "取消 Star"}</button><span /><button type="button" className="soft-button" onClick={closeDialog}>取消</button><button type="submit" className="primary-button" disabled={busy || detailsCreatingGroup}><Check size={17} />保存</button></div>{message && <p className="dialog-message" role="status">{message}</p>}
       </form>
     </ManageDialog>}
+
+    {dialog?.type === "ai" && <AiOrganizeDialog kind={kind} groups={groups} selectedIds={selected} onClose={closeDialog} onApplied={handleAiApplied} />}
 
     {downloadItem && <ManageDialog
       open

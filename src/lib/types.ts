@@ -29,6 +29,7 @@ export interface GithubStar {
   htmlUrl: string;
   description: string | null;
   language: string | null;
+  topics: string[];
   starsCount: number;
   ownerAvatarUrl: string | null;
   tags: string[];

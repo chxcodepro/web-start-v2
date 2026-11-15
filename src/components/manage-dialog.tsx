@@ -3,11 +3,12 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 
-export function ManageDialog({ open, title, description, onClose, children }: {
+export function ManageDialog({ open, title, description, onClose, className, children }: {
   open: boolean;
   title: string;
   description?: ReactNode;
   onClose: () => void;
+  className?: string;
   children: ReactNode;
 }) {
   const titleId = useId();
@@ -47,7 +48,7 @@ export function ManageDialog({ open, title, description, onClose, children }: {
 
   if (!open) return null;
   return <div className="manage-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <div ref={panelRef} className="manage-dialog glass" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined}>
+    <div ref={panelRef} className={`manage-dialog glass ${className ?? ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined}>
       <header className="manage-dialog-heading">
         <div><h2 id={titleId}>{title}</h2>{description && <p id={descriptionId}>{description}</p>}</div>
         <button type="button" className="dialog-close" aria-label="关闭" onClick={onClose}><X size={19} aria-hidden="true" /></button>
