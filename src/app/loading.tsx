@@ -1,5 +1,8 @@
+import { CollectionSkeleton, SearchSkeleton } from "@/components/collection-skeleton";
+
 export default function Loading() {
-  return <main className="page-shell page-recovery" role="status" aria-busy="true">
-    <p>正在加载…</p>
+  return <main className="page-shell">
+    <SearchSkeleton />
+    <CollectionSkeleton kind="bookmark" />
   </main>;
 }

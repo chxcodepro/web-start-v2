@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 import { demoBookmarkGroups, demoGithubGroups } from "@/lib/demo-data";
 import { getSupabaseAdmin, hasDatabaseConfig } from "@/lib/supabase";
 import type { Bookmark, BookmarkGroup, GithubGroup, GithubStar, Group } from "@/lib/types";
@@ -47,4 +48,26 @@ export async function getBookmarkGroups(includePrivate = false) {
 export async function getGithubGroups(includePrivate = false) {
   if (!hasDatabaseConfig()) return demoGithubGroups;
   return loadStars(includePrivate);
+}
+
+export type CollectionResult<T> = { status: "ready"; groups: T[] } | { status: "unavailable" };
+
+async function settleCollection<T>(source: string, load: () => Promise<T[]>): Promise<CollectionResult<T>> {
+  try {
+    return { status: "ready", groups: await load() };
+  } catch (error) {
+    // notFound、动态渲染中断等 Next.js 内部异常必须继续抛出
+    unstable_rethrow(error);
+    console.error(`[data] ${source} 读取失败，页面保持加载态并由客户端静默刷新`, error);
+    return { status: "unavailable" };
+  }
+}
+
+// 读取失败时不抛错：页面据此保持骨架屏，并在客户端静默刷新直到拿到数据
+export function loadBookmarkCollection(includePrivate: boolean) {
+  return settleCollection("bookmarks", () => getBookmarkGroups(includePrivate));
+}
+
+export function loadStarCollection(includePrivate: boolean) {
+  return settleCollection("github-stars", () => getGithubGroups(includePrivate));
 }

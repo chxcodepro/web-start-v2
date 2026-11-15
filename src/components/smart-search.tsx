@@ -25,7 +25,8 @@ function parseQuery(raw: string, current: Engine) {
   return { engine: matched[1].toLowerCase() === "g" ? "google" as const : "bing" as const, query: matched[2].trim() };
 }
 
-export function SmartSearch({ bookmarks }: { bookmarks: LocalItem[] }) {
+export function SmartSearch({ bookmarks: bookmarkSource }: { bookmarks: Promise<LocalItem[] | null> }) {
+  const [bookmarks, setBookmarks] = useState<LocalItem[]>([]);
   const [engine, setEngine] = useState<Engine>("bing");
   const [query, setQuery] = useState("");
   const [remote, setRemote] = useState<string[]>([]);
@@ -34,6 +35,13 @@ export function SmartSearch({ bookmarks }: { bookmarks: LocalItem[] }) {
   const [active, setActive] = useState(-1);
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // 搜索框不等待数据库：书签到达后再加入本地匹配，读取失败时保留已有结果
+    let active = true;
+    bookmarkSource.then((items) => { if (active && items) setBookmarks(items); }, () => {});
+    return () => { active = false; };
+  }, [bookmarkSource]);
 
   useEffect(() => {
     const saved = localStorage.getItem("start-page-search-engine");

@@ -1,6 +1,6 @@
 # Agent Note: Background and page loading recovery
 
-Status: implemented
+Status: implemented; error-boundary recovery superseded by `2026-11-15-silent-collection-loading.md`
 
 ## Problem
 

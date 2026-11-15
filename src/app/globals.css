@@ -44,10 +44,22 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 
 .page-shell { position: relative; width: min(1180px, calc(100% - 32px)); margin-inline: auto; }
 .page-recovery { padding-block: 96px 48px; color: #fff; }
-.page-recovery h1 { margin: 0 0 12px; font-size: 24px; }
-.page-recovery p { margin: 0 0 24px; line-height: 1.6; }
-.page-recovery .soft-button { border-radius: 8px; }
-.page-recovery .soft-button:disabled { cursor: wait; opacity: .7; }
+.page-recovery p { margin: 0; line-height: 1.6; }
+.skeleton-surface, .skeleton-card { pointer-events: none; }
+.skeleton-block { display: block; border-radius: 8px; background: rgba(255,255,255,.16); animation: skeleton-pulse 1.8s ease-in-out infinite; }
+.skeleton-placeholder { overflow: hidden; color: rgba(255,255,255,.58); text-shadow: 0 1px 4px rgba(0,0,0,.3); white-space: nowrap; }
+.skeleton-engine { width: 76px; height: 26px; margin-left: 10px; border-radius: 13px; }
+.skeleton-search-text { padding: 0 14px; font-size: 17px; }
+.star-search .skeleton-placeholder { font-size: 15px; }
+.star-sort .skeleton-placeholder { font-size: 13px; }
+.skeleton-heading { width: 88px; height: 20px; border-radius: 7px; }
+.skeleton-icon { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 11px; }
+.skeleton-copy { min-width: 0; flex: 1; display: grid; gap: 7px; }
+.skeleton-line { width: 68%; height: 12px; border-radius: 6px; }
+.skeleton-line.wide { width: 94%; height: 10px; }
+.skeleton-line.short { width: 42%; height: 9px; }
+.skeleton-notice { position: fixed; left: 50%; bottom: 24px; z-index: 36; width: max-content; max-width: calc(100vw - 132px); margin: 0; padding: 7px 14px; border-radius: 999px; color: rgba(255,255,255,.9); background: rgba(20,27,35,.5); font-size: 13px; text-shadow: 0 1px 5px rgba(0,0,0,.4); transform: translateX(-50%); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+@keyframes skeleton-pulse { 50% { opacity: .5; } }
 .glass {
   background: var(--surface);
   border: 1px solid rgba(255, 255, 255, .5);
@@ -455,7 +467,7 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
   .bookmark-grid, .star-grid { gap: 12px; }
   .bookmark-card { min-height: 82px; padding: 12px; gap: 12px; border-radius: 16px; }
   .star-card { min-height: 108px; padding: 12px; gap: 12px; border-radius: 16px; }
-  .favicon, .star-avatar { width: 44px; height: 44px; flex-basis: 44px; border-radius: 13px; }
+  .favicon, .star-avatar, .skeleton-icon { width: 44px; height: 44px; flex-basis: 44px; border-radius: 13px; }
   .favicon img { width: 36px; height: 36px; }
   .star-avatar svg { width: 22px; height: 22px; }
   .card-title { font-size: 15px; }

@@ -10,6 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
 const root = new URL("../", import.meta.url);
+const artifactPath = (name) => fileURLToPath(new URL(`../artifacts/loading-recovery/${name}`, import.meta.url));
 const tempRoot = fileURLToPath(new URL("../artifacts/tmp/", import.meta.url));
 await mkdir(tempRoot, { recursive: true });
 const workspace = await mkdtemp(join(tempRoot, "loading-smoke-"));
@@ -110,28 +111,38 @@ try {
         ? route.fulfill({ status: 502, contentType: "application/json", body: "{}" })
         : route.fulfill({ status: 200, contentType: imageType, body: image });
   });
+  // 搜索补全依赖外部服务，测试中固定为空结果
+  await page.route("**/api/search/suggestions**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: '{"suggestions":[]}' }));
   await page.goto(base);
-  await page.getByRole("heading", { name: "暂时无法加载页面" }).waitFor();
+  const loadingState = page.locator('.collection-skeleton[aria-busy="true"]');
+  await loadingState.waitFor();
   await page.waitForFunction(() => document.body.style.getPropertyValue("--background-image").includes("blob:"));
   assert.equal(imageRequests, 3);
   assert.ok(await page.locator('a[href="/stars"]').isVisible());
-  await page.waitForFunction(() => Boolean(sessionStorage.getItem("page-recovery:/")));
-  await delay(1600);
-  assert.equal(counts.get("bookmark-groups"), 6);
-  assert.equal(counts.get("bookmarks"), 6);
-  await delay(2000);
-  assert.equal(counts.get("bookmarks"), 6);
-  console.log("PASS: damaged/failed backgrounds retry; persistent database failures keep navigation and bound automatic recovery");
+  const search = page.locator("#search-query");
+  await search.fill("恢复");
+  for (let attempt = 0; attempt < 150 && (counts.get("bookmarks") || 0) < 9; attempt += 1) await delay(100);
+  assert.ok(counts.get("bookmarks") >= 9, `expected silent refreshes, saw ${counts.get("bookmarks")} bookmark reads`);
+  await page.getByText("数据加载较慢，请稍候…").waitFor({ timeout: 15000 });
+  assert.ok(await loadingState.isVisible());
+  assert.equal(await page.getByText("暂时无法加载页面").count(), 0);
+  assert.equal(await page.getByRole("button", { name: /重试|重新加载/ }).count(), 0);
+  await mkdir(new URL("../artifacts/loading-recovery/", import.meta.url), { recursive: true });
+  await page.screenshot({ path: artifactPath("pending-desktop.png") });
+  console.log("PASS: damaged/failed backgrounds retry; database failures keep navigation, a usable search box and a loading skeleton while refreshing silently");
 
   unavailable = false;
-  await page.getByRole("button", { name: "重新加载", exact: true }).click();
-  await page.getByText("恢复成功", { exact: true }).waitFor();
+  await page.locator(".bookmark-card .card-title-text", { hasText: "恢复成功" }).waitFor({ timeout: 30000 });
+  assert.equal(await loadingState.count(), 0);
+  assert.equal(await search.inputValue(), "恢复");
+  await page.locator(".suggestion-item", { hasText: "恢复成功" }).waitFor();
+  await search.press("Escape");
   const cached = await page.evaluate(async () => {
     const response = await (await caches.open("start-page-background-v1")).match("/api/background");
     return response?.headers.get("content-type");
   });
   assert.equal(cached, imageType);
-  console.log("PASS: retry re-fetches Server Component data and preserves opaque API key handling and public query filtering");
+  console.log("PASS: data renders automatically once available, typed search text survives refreshes, bookmarks join local suggestions, and opaque API key handling and public query filtering are preserved");
 
   transientStars = true;
   await page.locator('a[href="/stars"]').click();
@@ -155,11 +166,10 @@ try {
   assert.equal(failedImages, 3);
   console.log("PASS: upstream failure after reload retains the previous decoded image and stops after three attempts");
 
-  await mkdir(new URL("../artifacts/loading-recovery/", import.meta.url), { recursive: true });
-  await page.screenshot({ path: new URL("../artifacts/loading-recovery/desktop.png", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"), fullPage: true });
+  await page.screenshot({ path: artifactPath("desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  await page.screenshot({ path: new URL("../artifacts/loading-recovery/mobile.png", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"), fullPage: true });
+  await page.screenshot({ path: artifactPath("mobile.png"), fullPage: true });
   console.log("PASS: desktop/mobile content renders without horizontal overflow");
 
   const restricted = await browser.newContext();
@@ -172,6 +182,34 @@ try {
   await restrictedPage.getByText("恢复成功", { exact: true }).waitFor();
   await restrictedPage.waitForFunction(() => document.body.style.getPropertyValue("--background-image").includes("blob:"));
   console.log("PASS: unavailable browser storage does not prevent background or page loading");
+
+  // 数据流中途断开：截断一次客户端导航的 RSC 响应，错误边界应保持骨架屏并静默恢复
+  const interrupted = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const interruptedPage = await interrupted.newPage();
+  interruptedPage.on("pageerror", (error) => browserErrors.push(error.message));
+  await interruptedPage.route("**/api/background", (route) => route.fulfill({ status: 200, contentType: imageType, body: image }));
+  await interruptedPage.goto(`${base}/stars`);
+  await interruptedPage.waitForFunction(() => document.body.innerText.includes("测试 Star"));
+  let documentLoads = 0;
+  let truncatedFlights = 0;
+  await interruptedPage.route((url) => url.pathname === "/", async (route) => {
+    const request = route.request();
+    const headers = request.headers();
+    if (request.resourceType() === "document") documentLoads += 1;
+    if (truncatedFlights || !headers.rsc || headers["next-router-prefetch"]) return route.continue();
+    const response = await route.fetch();
+    const flight = await response.text();
+    const cut = flight.lastIndexOf("\n", flight.indexOf("恢复成功"));
+    assert.ok(cut > 0, "flight payload should stream the bookmark rows after the page shell");
+    truncatedFlights += 1;
+    return route.fulfill({ response, body: flight.slice(0, cut + 1) });
+  });
+  await interruptedPage.locator('a[href="/"]').click();
+  await interruptedPage.locator(".bookmark-card .card-title-text", { hasText: "恢复成功" }).waitFor({ timeout: 30000 });
+  assert.equal(truncatedFlights, 1);
+  assert.equal(documentLoads, 0);
+  assert.equal(await interruptedPage.getByText("暂时无法加载页面").count(), 0);
+  console.log("PASS: an interrupted Server Component stream recovers silently through the error boundary without a full reload");
 } catch (error) {
   console.error(error.message);
   if (page) console.error("Browser text:", (await page.locator("body").innerText()).slice(0, 2400));
