@@ -16,7 +16,8 @@
 }
 
 * { box-sizing: border-box; }
-html { min-width: 320px; min-height: 100%; background: #070c0a; scroll-behavior: smooth; overscroll-behavior-y: none; }
+/* overflow-x: clip：侧栏展开时内容区整体右移，不能因此出现横向滚动条 */
+html { min-width: 320px; min-height: 100%; overflow-x: clip; background: #070c0a; scroll-behavior: smooth; overscroll-behavior-y: none; }
 body {
   min-height: 100vh;
   min-height: 100dvh;
@@ -176,10 +177,14 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
 .group-sidebar:hover nav a, .group-sidebar:focus-within nav a, .group-sidebar.drag-active nav a { justify-content: flex-start; padding: 0 8px; }
 .group-sidebar:hover nav a > span, .group-sidebar:focus-within nav a > span, .group-sidebar.drag-active nav a > span { max-width: 104px; opacity: 1; }
 .group-sidebar nav a.drop-target { color: white; background: rgba(82,151,255,.42); box-shadow: inset 0 0 0 1px rgba(174,211,255,.46), 0 0 18px rgba(71,145,255,.24); }
-.group-content { min-width: 0; transition: margin-left 180ms ease-out; }
-.home-layout:has(.group-sidebar:hover) .group-content, .home-layout:has(.group-sidebar:focus-within) .group-content, .home-layout:has(.group-sidebar.drag-active) .group-content { margin-left: 124px; }
+/* 侧栏展开时内容区用 transform 右移：不改宽度就不会重新排版，点分组跳转后移开鼠标，位置也不会再变 */
+.group-content { min-width: 0; transition: transform 180ms ease-out; }
+.home-layout:has(.group-sidebar:hover) .group-content, .home-layout:has(.group-sidebar:focus-within) .group-content, .home-layout:has(.group-sidebar.drag-active) .group-content { transform: translateX(124px); }
 .group-content .section { scroll-margin-top: 104px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.group-content .section:focus { outline: none; }
 .group-content .editable-section { content-visibility: auto; contain-intrinsic-size: auto 620px; }
+/* 侧栏跳转期间所有分组按真实高度排版，滚动目标才准 */
+.collection-board.is-jumping .editable-section { content-visibility: visible; }
 .group-content .section-heading h2 { color: rgba(255,255,255,.94); text-shadow: 0 2px 8px rgba(0,0,0,.5); }
 .bookmark-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
 .bookmark-card { min-height: 72px; border-radius: 14px; background: transparent; border: 0; box-shadow: none; padding: 10px; display: flex; align-items: center; gap: 10px; transition: transform 160ms ease-out, background-color 160ms ease-out; }
@@ -617,7 +622,7 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
   .group-sidebar:hover, .group-sidebar:focus-within, .group-sidebar.drag-active { width: 148px; }
   .group-sidebar nav a { min-height: 42px; font-size: 13px; }
   .group-sidebar:hover nav a > span, .group-sidebar:focus-within nav a > span, .group-sidebar.drag-active nav a > span { max-width: 112px; }
-  .home-layout:has(.group-sidebar:hover) .group-content, .home-layout:has(.group-sidebar:focus-within) .group-content, .home-layout:has(.group-sidebar.drag-active) .group-content { margin-left: 134px; }
+  .home-layout:has(.group-sidebar:hover) .group-content, .home-layout:has(.group-sidebar:focus-within) .group-content, .home-layout:has(.group-sidebar.drag-active) .group-content { transform: translateX(134px); }
 }
 
 @media (max-width: 1100px) {
@@ -650,7 +655,9 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
   .group-sidebar nav { height: auto; min-height: auto; display: flex; overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; opacity: 1; pointer-events: auto; }
   .group-sidebar nav a { flex: 0 0 auto; justify-content: flex-start; padding: 0 12px; }
   .group-sidebar nav a > span { max-width: 150px; opacity: 1; }
-  .home-layout:has(.group-sidebar:hover) .group-content, .home-layout:has(.group-sidebar:focus-within) .group-content, .home-layout:has(.group-sidebar.drag-active) .group-content { margin-left: 0; }
+  .home-layout:has(.group-sidebar:hover) .group-content, .home-layout:has(.group-sidebar:focus-within) .group-content, .home-layout:has(.group-sidebar.drag-active) .group-content { transform: none; }
+  /* 手机上分组栏吸在页面顶部（top 96px，约 58px 高），跳转后分组标题要露在它下面 */
+  .group-content .section { scroll-margin-top: 168px; }
   :root { --dock-inset: 12px; }
   .star-toolbar { padding: 12px 0 24px; align-items: stretch; }
   .star-search { width: 100%; }

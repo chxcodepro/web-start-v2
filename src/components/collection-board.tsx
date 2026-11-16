@@ -693,6 +693,7 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
         return <section
         className={`section editable-section ${draggedGroup === group.id ? "dragging" : ""}`}
         id={`group-${group.id}`}
+        tabIndex={-1}
         key={group.id}
         onDragOver={(event) => { if (canManage) event.preventDefault(); }}
         onDrop={(event) => { event.preventDefault(); if (draggedGroup) void dropGroup(group.id); else void dropItem(group.id); }}
