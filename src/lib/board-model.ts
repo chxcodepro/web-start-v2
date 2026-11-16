@@ -33,13 +33,6 @@ export function databaseGroupId(groupId: string) {
   return groupId === UNGROUPED_ID ? null : groupId;
 }
 
-// 新分组排在「未分组」前面，和手动新建分组的位置一致
-export function insertGroups(groups: BoardGroup[], created: BoardGroup[]) {
-  if (!created.length) return groups;
-  const index = groups.findIndex((group) => group.id === UNGROUPED_ID);
-  return index < 0 ? [...groups, ...created] : [...groups.slice(0, index), ...created, ...groups.slice(index)];
-}
-
 // 按 moves 的顺序把条目追加到目标分组末尾
 export function applyItemMoves(groups: BoardGroup[], moves: ItemMove[]) {
   const targets = new Map(moves.map((move) => [move.itemId, move.to]));
@@ -78,7 +71,7 @@ export function revertItemMoves(groups: BoardGroup[], moves: ItemMove[], orders:
   });
 }
 
-// 每个目标分组一次请求：写入新分组，并按最终顺序保存该分组的排序
+// 每个目标分组一次请求：把条目移进该分组，并按最终顺序保存该分组的排序
 export function moveRequests(kind: BoardKind, nextGroups: BoardGroup[], moves: ItemMove[]) {
   const byTarget = new Map<string, string[]>();
   for (const move of moves) byTarget.set(move.to, [...(byTarget.get(move.to) ?? []), move.itemId]);

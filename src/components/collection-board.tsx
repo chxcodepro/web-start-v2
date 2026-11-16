@@ -10,13 +10,13 @@ import { BookmarkFavicon } from "@/components/bookmark-favicon";
 import { GroupSidebar } from "@/components/group-sidebar";
 import { ManageDialog } from "@/components/manage-dialog";
 import { SyncStarsButton } from "@/components/sync-stars-button";
-import { applyItemMoves, insertGroups, moveRequests, revertItemMoves, sourceOrders, type BoardGroup, type BoardItem, type BoardKind, type ItemMove } from "@/lib/board-model";
+import { applyItemMoves, moveRequests, revertItemMoves, sourceOrders, type BoardGroup, type BoardItem, type BoardKind, type ItemMove } from "@/lib/board-model";
 import type { BookmarkGroup, GithubGroup } from "@/lib/types";
 
 type SourceGroups = BookmarkGroup[] | GithubGroup[];
 type StarSortMode = "manual" | "updated-desc" | "updated-asc";
 // AI 整理后的撤销记录；只在对应提示仍显示时可用
-type UndoRecord = { message: string; moves: ItemMove[]; orders: Record<string, string[]>; createdGroupIds: string[] };
+type UndoRecord = { message: string; moves: ItemMove[]; orders: Record<string, string[]> };
 
 type GithubDownloadFile = {
   id: string;
@@ -610,16 +610,15 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
   }
 
   function handleAiApplied(result: AiApplyResult) {
-    const withCreated = insertGroups(groups, result.created);
-    const orders = sourceOrders(withCreated, result.moves);
-    setGroupsWithMotion(applyItemMoves(withCreated, result.moves));
+    const orders = sourceOrders(groups, result.moves);
+    setGroupsWithMotion(applyItemMoves(groups, result.moves));
     setSelected(new Set());
     setDialog(null);
     const text = result.error
       ? `${result.moves.length ? `已整理 ${result.moves.length} 项，其余` : "AI 整理"}保存失败：${result.error}`
       : `已整理 ${result.moves.length} 项`;
     setMessage(text);
-    setUndo(result.moves.length || result.created.length ? { message: text, moves: result.moves, orders, createdGroupIds: result.created.map((group) => group.id) } : null);
+    setUndo(result.moves.length ? { message: text, moves: result.moves, orders } : null);
   }
 
   async function undoAiOrganize() {
@@ -637,16 +636,7 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
         reverted.push(...record.moves.filter((move) => move.from === request.target));
       }
     } catch (error) { failure = error instanceof Error ? error.message : "撤销失败"; }
-    let next = revertItemMoves(groups, reverted, record.orders);
-    // 全部放回后，AI 新建且已空的分组一并删除
-    for (const id of failure ? [] : record.createdGroupIds) {
-      if (next.find((group) => group.id === id)?.items.length) continue;
-      try {
-        await api("DELETE", { entity: "group", id, kind });
-        next = next.filter((group) => group.id !== id);
-      } catch {}
-    }
-    setGroupsWithMotion(next);
+    setGroupsWithMotion(revertItemMoves(groups, reverted, record.orders));
     setMessage(failure ? `撤销失败：${failure}` : "已撤销");
     setBusy(false);
   }

@@ -463,7 +463,6 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
 .ai-section-heading { min-height: 32px; display: flex; align-items: center; gap: 8px; }
 .ai-section-heading h3 { min-width: 0; margin: 0; overflow: hidden; color: rgba(255,255,255,.94); font-size: 14px; font-weight: 750; white-space: nowrap; text-overflow: ellipsis; }
 .ai-section-heading h3 span { margin-right: 6px; color: rgba(255,255,255,.5); font-weight: 600; }
-.ai-badge { flex: 0 0 auto; padding: 2px 7px; border-radius: 999px; color: #d6e8ff; background: rgba(82,151,255,.26); font-size: 11px; font-weight: 750; }
 .ai-section-count { margin-left: auto; color: rgba(255,255,255,.5); font-size: 12px; font-variant-numeric: tabular-nums; }
 .ai-section-toggle { min-height: 30px; padding: 0 9px; border: 0; border-radius: 9px; color: rgba(214,232,255,.88); background: transparent; font-size: 12px; font-weight: 700; cursor: pointer; transition: background-color 140ms ease-out, color 140ms ease-out; }
 .ai-section-toggle:hover:not(:disabled) { color: #fff; background: rgba(255,255,255,.08); }

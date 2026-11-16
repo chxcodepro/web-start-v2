@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildClassifyPrompt, groupNameKey, normalizeGroupName, parseClassifyResult } from "../src/lib/ai-classify.ts";
+import { buildClassifyPrompt, classifySchema, groupNameKey, parseClassifyResult } from "../src/lib/ai-classify.ts";
 
 const star = (id, fullName, extra = {}) => ({
   id, githubRepoId: 1, groupId: null, fullName, displayName: null, htmlUrl: `https://github.com/${fullName}`,
@@ -23,12 +23,10 @@ const starGroups = () => [
 const userPayload = (prompt) => prompt.messages[1].content;
 
 test("prompt numbers items in request order and exposes only short group keys", () => {
-  const prompt = buildClassifyPrompt("github", starGroups(), ["biome", "ollama", "missing"], ["本地 部署", "开发工具", "本地部署"]);
+  const prompt = buildClassifyPrompt("github", starGroups(), ["biome", "ollama", "missing"]);
   assert.deepEqual([...prompt.itemIds], [[1, "biome"], [2, "ollama"]]);
   assert.deepEqual([...prompt.groupKeys], [["g1", { id: "tools", name: "开发工具" }], ["g2", { id: "ai", name: "AI 应用" }]]);
   assert.equal(prompt.currentGroups.get("ollama"), "ungrouped");
-  // 已有分组同名、重复的提议会被去掉
-  assert.deepEqual(prompt.proposedGroups, ["本地 部署"]);
   const payload = userPayload(prompt);
   assert.match(payload, /"repo":"ollama\/ollama"/);
   assert.match(payload, /"topics":\["llm","self-hosted"\]/);
@@ -36,6 +34,19 @@ test("prompt numbers items in request order and exposes only short group keys", 
   assert.match(payload, /vercel\/next\.js：The React Framework/);
   assert.doesNotMatch(payload, /"id"|ungrouped/);
   assert.match(prompt.messages[0].content, /json/);
+});
+
+test("prompt only offers existing groups, including empty ones", () => {
+  const [system, payload] = buildClassifyPrompt("github", starGroups(), ["ollama"]).messages.map((message) => message.content);
+  assert.match(system, /只能从分组列表里选/);
+  assert.match(system, /不要新建分组/);
+  assert.doesNotMatch(system + payload, /newGroup|已提议/);
+  // 空分组也列出来：用户可以先建好分组，再让 AI 把条目放进去
+  const catalog = JSON.parse(payload.split("\n")[1]);
+  assert.deepEqual(catalog[1], { key: "g2", name: "AI 应用", count: 0, examples: [] });
+  const fields = classifySchema.properties.results.items;
+  assert.deepEqual(fields.required, ["n", "group", "confidence", "reason"]);
+  assert.equal("newGroup" in fields.properties, false);
 });
 
 test("examples skip items that are being classified", () => {
@@ -56,19 +67,19 @@ test("bookmark prompts describe the site instead of the full URL noise", () => {
   assert.match(payload, /"current":"g1"/);
 });
 
-test("results map keys, names and proposals back to real ids", () => {
-  const prompt = buildClassifyPrompt("github", starGroups(), ["ollama", "biome", "next", "vite"], ["本地部署"]);
+test("results map group keys and names back to real ids", () => {
+  const prompt = buildClassifyPrompt("github", starGroups(), ["ollama", "biome", "next", "vite"]);
   const result = parseClassifyResult({ results: [
-    { n: 1, group: null, newGroup: "「本地 部署」", confidence: "high", reason: "本地运行大模型" },
-    { n: 2, group: "开发工具", newGroup: null, confidence: "medium", reason: "代码格式化" },
+    { n: 1, group: "g2", confidence: "high", reason: "本地运行大模型" },
+    { n: 2, group: "开发工具", confidence: "medium", reason: "代码格式化" },
     { n: "3", group: "g1", confidence: "certain", reason: "框架" },
     { n: 3, group: "g2", confidence: "high", reason: "重复结果应忽略" },
     { n: 9, group: "g1", confidence: "high", reason: "不存在的编号" },
-    { n: 4, group: null, newGroup: "ai应用", confidence: "high", reason: "新分组与已有同名" },
+    { n: 4, group: "「ai应用」", confidence: "high", reason: "分组名写法不同" },
     { group: "g1" }
   ] }, prompt);
   const byId = Object.fromEntries(result.suggestions.map((item) => [item.id, item]));
-  assert.deepEqual(byId.ollama, { id: "ollama", groupId: null, newGroup: "本地部署", newGroupKey: "本地部署", confidence: "high", reason: "本地运行大模型" });
+  assert.deepEqual(byId.ollama, { id: "ollama", groupId: "ai", confidence: "high", reason: "本地运行大模型" });
   assert.equal(byId.biome.groupId, "tools");
   assert.equal(byId.next.groupId, "tools");
   assert.equal(byId.next.confidence, "low");
@@ -77,16 +88,23 @@ test("results map keys, names and proposals back to real ids", () => {
   assert.deepEqual(result.missing, []);
 });
 
-test("unsure or missing answers keep items where they are", () => {
-  const prompt = buildClassifyPrompt("github", starGroups(), ["ollama", "biome"]);
-  const result = parseClassifyResult([{ n: 1, group: null, newGroup: null, confidence: "high", reason: "" }], prompt);
-  assert.deepEqual(result.suggestions, [{ id: "ollama", groupId: "ungrouped", newGroup: null, newGroupKey: null, confidence: "low", reason: "无法判断" }]);
+test("made-up groups, unsure or missing answers keep items where they are", () => {
+  const prompt = buildClassifyPrompt("github", starGroups(), ["ollama", "biome", "next"]);
+  const result = parseClassifyResult([
+    // 模型编造了分组名，还带着旧格式的 newGroup 字段
+    { n: 1, group: "本地部署", newGroup: "本地部署", confidence: "high", reason: "本地运行大模型" },
+    { n: 3, group: null, confidence: "high", reason: "" }
+  ], prompt);
+  assert.deepEqual(result.suggestions, [
+    { id: "ollama", groupId: "ungrouped", confidence: "low", reason: "本地运行大模型" },
+    { id: "next", groupId: "tools", confidence: "low", reason: "没有合适的分组" }
+  ]);
   assert.deepEqual(result.missing, ["biome"]);
   assert.throws(() => parseClassifyResult({ answer: "好的" }, prompt), /格式不正确/);
 });
 
 test("group names are compared without spaces, quotes or case", () => {
-  assert.equal(normalizeGroupName("  “AI   工具” "), "AI 工具");
-  assert.equal(groupNameKey("AI 工具"), groupNameKey("ai工具"));
-  assert.equal(normalizeGroupName("一个非常非常非常非常非常非常长的分组名称超过二十个字"), "一个非常非常非常非常非常非常长的分组名称");
+  assert.equal(groupNameKey("  “AI   工具” "), "ai工具");
+  assert.equal(groupNameKey("「AI 工具」"), groupNameKey("ai工具"));
+  assert.notEqual(groupNameKey("AI 工具"), groupNameKey("AI 应用"));
 });

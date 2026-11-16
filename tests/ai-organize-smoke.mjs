@@ -1,4 +1,4 @@
-// AI 整理端到端冒烟测试：模拟 Supabase（PostgREST 子集）、DeepSeek 接口和登录会话，在真实浏览器里走完整流程
+// AI 整理端到端冒烟测试：模拟 Supabase（PostgREST 子集）、AI 接口和登录会话，在真实浏览器里走完整流程
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
@@ -40,7 +40,8 @@ const timestamp = "2026-11-15T00:00:00.000Z";
 
 // ---------- 测试数据 ----------
 const makeGroup = (kind, name, sortOrder) => ({ id: randomUUID(), kind, name, sort_order: sortOrder, is_public: true });
-const starGroups = { tools: makeGroup("github", "开发工具", 0), ai: makeGroup("github", "AI 应用", 1), design: makeGroup("github", "设计素材", 2) };
+// 「智能家居」是用户事先建好的空分组，AI 应该能把条目放进去
+const starGroups = { tools: makeGroup("github", "开发工具", 0), ai: makeGroup("github", "AI 应用", 1), design: makeGroup("github", "设计素材", 2), home: makeGroup("github", "智能家居", 3) };
 const bookmarkGroups = { daily: makeGroup("bookmark", "日常使用", 0), design: makeGroup("bookmark", "设计", 1), reading: makeGroup("bookmark", "阅读", 2) };
 let repoId = 1000;
 const makeStar = (fullName, groupId = null, sortOrder = 0) => ({
@@ -183,13 +184,14 @@ function decide(entry, keyOf) {
     // 故意写分组名而不是编号
     case "biomejs/biome": return { group: "开发工具", confidence: "high", reason: "代码格式化工具" };
     case "excalidraw/excalidraw": return { group: keyOf("设计素材"), confidence: "medium", reason: "手绘风格白板" };
-    case "home-assistant/core": return { group: null, newGroup: "智能家居", confidence: "high", reason: "家庭自动化平台" };
-    // 同一个新分组的不同写法，前端应合并
-    case "esphome/esphome": return { group: null, newGroup: "智能 家居", confidence: "high", reason: "智能设备固件" };
-    case "jellyfin/jellyfin": return jellyfinSeen++ === 0 ? null : { group: null, newGroup: "影音娱乐", confidence: "high", reason: "家庭影音服务器" };
+    case "home-assistant/core": return { group: keyOf("智能家居"), confidence: "high", reason: "家庭自动化平台" };
+    // 分组名的写法和原名不完全一致，也应识别
+    case "esphome/esphome": return { group: "「智能 家居」", confidence: "high", reason: "智能设备固件" };
+    // 第一次漏掉；重新分析时编造一个不存在的分组，还带着旧格式的 newGroup 字段，应保持不动
+    case "jellyfin/jellyfin": return jellyfinSeen++ === 0 ? null : { group: "影音娱乐", newGroup: "影音娱乐", confidence: "high", reason: "家庭影音服务器" };
     case "Figma": return { group: keyOf("设计"), confidence: "high", reason: "界面设计工具" };
     case "Hacker News": return { group: keyOf("阅读"), confidence: "high", reason: "技术新闻聚合" };
-    default: return { group: null, newGroup: null, confidence: "low", reason: "" };
+    default: return { group: null, confidence: "low", reason: "" };
   }
 }
 
@@ -236,6 +238,8 @@ function checkRequest(headers, path, body) {
     }
   }
   if (provider !== "gemini" && body.model !== expected.model) problem(`模型不对：${body.model}`);
+  const schema = body.output_config?.format?.schema ?? body.generationConfig?.responseJsonSchema ?? body.response_format?.json_schema?.schema;
+  if (schema && "newGroup" in schema.properties.results.items.properties) problem("结构化输出里不应再有 newGroup");
 }
 
 function errorBody(format, status, message) {
@@ -262,9 +266,11 @@ const ai = createServer(async (request, response) => {
     const lines = prompt.user.split("\n");
     const groups = JSON.parse(lines[1]);
     const items = JSON.parse(lines.at(-1));
-    aiRequests.push({ proposed: lines[3], names: items.map((item) => item.repo ?? item.title) });
+    aiRequests.push({ names: items.map((item) => item.repo ?? item.title) });
     checkRequest(request.headers, path, body);
     if (!/json/.test(prompt.system)) aiProblems.push("系统提示词缺少 json 字样");
+    if (/newGroup|已提议/.test(prompt.system + prompt.user)) aiProblems.push("提示词里不应再出现新分组");
+    if (items[0]?.repo && groups.find((group) => group.name === "智能家居")?.count !== 0) aiProblems.push("用户建好的空分组应提供给 AI");
 
     if (failNextStatus) {
       const status = failNextStatus;
@@ -286,8 +292,6 @@ const ai = createServer(async (request, response) => {
       response.end(JSON.stringify(replyBody(prompt.format, '{"results":[{"n":1', true)));
       return;
     }
-    // 让只有 esphome 的那批晚一点返回，新分组名以第一批的写法为准
-    if (items.some((item) => item.repo === "esphome/esphome")) await delay(4000);
     const keyOf = (name) => groups.find((group) => group.name === name)?.key ?? null;
     const results = items.flatMap((item) => {
       const decision = decide(item, keyOf);
@@ -370,41 +374,42 @@ try {
   console.log("PASS: 第一次 503 自动重试；输出被截断的批次自动拆成两半；审阅区显示所用渠道和模型");
 
   const smartHome = dialog.getByRole("region", { name: "移到 智能家居" });
-  assert.equal(await smartHome.locator(".ai-row").count(), 2, "不同批次的「智能家居」「智能 家居」应合并");
-  assert.ok(await smartHome.getByText("新建", { exact: true }).isVisible());
+  assert.equal(await smartHome.locator(".ai-row").count(), 2, "编号和写法不同的分组名都应归到「智能家居」");
+  assert.equal(await dialog.getByText("新建", { exact: true }).count(), 0, "审阅区不应再出现新建分组");
+  assert.equal(await dialog.locator("option", { hasText: "新建" }).count(), 0);
   assert.equal(await dialog.getByRole("region", { name: "移到 开发工具" }).locator(".ai-row").count(), 25);
   assert.equal(await dialog.getByRole("region", { name: "移到 AI 应用" }).locator(".ai-row").count(), 1);
   const designRow = dialog.getByRole("region", { name: "移到 设计素材" }).locator(".ai-row");
   assert.ok(await designRow.getByText("可能", { exact: true }).isVisible(), "中等把握应显示「可能」");
   assert.ok(await dialog.getByRole("checkbox", { name: "移动 excalidraw" }).isChecked());
+  assert.match(await dialog.locator(".ai-summary").innerText(), /AI 建议移动 29 项/);
   assert.match(await dialog.getByRole("alert").innerText(), /1 项没有拿到建议/);
   assert.match(await dialog.locator(".ai-keep summary").innerText(), /保持不动\s*1/);
-  console.log("PASS: 分组编号和分组名都能映射；同名新分组合并；拿不准的保持不动；漏掉的条目单独列出");
+  console.log("PASS: 分组编号和分组名都能映射，事先建好的空分组也会用上；拿不准的保持不动；漏掉的条目单独列出");
 
   await dialog.getByRole("button", { name: "重新分析" }).click();
-  await dialog.getByRole("region", { name: "移到 影音娱乐" }).waitFor({ timeout: 30000 });
+  await dialog.locator(".ai-keep summary", { hasText: /保持不动\s*2/ }).waitFor({ timeout: 30000 });
   assert.equal(await dialog.getByRole("alert").count(), 0);
-  assert.match(aiRequests.at(-1).proposed, /智能家居/, "重新分析时应带上已提议的新分组");
-  assert.match(await dialog.locator(".ai-summary").innerText(), /其中 2 个是新分组/);
-  console.log("PASS: 重新分析只请求失败的条目，并带上已提议的新分组名");
+  assert.deepEqual(aiRequests.at(-1).names, ["jellyfin/jellyfin"], "重新分析只请求失败的条目");
+  assert.equal(await dialog.getByRole("region", { name: "移到 影音娱乐" }).count(), 0, "模型编造的分组不应出现");
+  assert.equal(await dialog.locator(".ai-keep .ai-row", { hasText: "jellyfin" }).count(), 1);
+  console.log("PASS: 重新分析只请求失败的条目；模型写了不存在的分组时，条目保持不动");
 
   await dialog.getByRole("checkbox", { name: "移动 cli-03" }).uncheck();
   await dialog.locator(".ai-keep summary").click();
   await dialog.getByRole("combobox", { name: "mystery 的目标分组" }).selectOption({ label: "开发工具" });
   assert.equal(await dialog.getByRole("region", { name: "移到 开发工具" }).locator(".ai-row").count(), 26);
-  assert.equal(await applyButton.innerText(), "应用 30 项");
+  assert.equal(await applyButton.innerText(), "应用 29 项");
   assert.equal(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth), true);
   await page.screenshot({ path: artifactPath("review-desktop.png") });
   await applyButton.click();
-  await page.locator(".manage-toast.visible", { hasText: "已整理 30 项" }).waitFor({ timeout: 30000 });
+  await page.locator(".manage-toast.visible", { hasText: "已整理 29 项" }).waitFor({ timeout: 30000 });
   assert.equal(await dialog.count(), 0);
 
-  const smartHomeGroup = groupByName("github", "智能家居");
-  const mediaGroup = groupByName("github", "影音娱乐");
-  assert.ok(smartHomeGroup && mediaGroup, "应新建两个分组");
-  assert.equal(starByName("home-assistant/core").group_id, smartHomeGroup.id);
-  assert.equal(starByName("esphome/esphome").group_id, smartHomeGroup.id);
-  assert.equal(starByName("jellyfin/jellyfin").group_id, mediaGroup.id);
+  assert.equal(tables.groups.filter((row) => row.kind === "github").length, 4, "不应新建任何分组");
+  assert.equal(starByName("home-assistant/core").group_id, starGroups.home.id);
+  assert.equal(starByName("esphome/esphome").group_id, starGroups.home.id);
+  assert.equal(starByName("jellyfin/jellyfin").group_id, null);
   assert.equal(starByName("ollama/ollama").group_id, starGroups.ai.id);
   assert.equal(starByName("excalidraw/excalidraw").group_id, starGroups.design.id);
   assert.equal(starByName("someone/mystery").group_id, starGroups.tools.id);
@@ -412,21 +417,21 @@ try {
   const toolOrders = tables.github_stars.filter((row) => row.group_id === starGroups.tools.id).map((row) => row.sort_order).sort((a, b) => a - b);
   assert.deepEqual(toolOrders, toolOrders.map((_, index) => index), "目标分组的排序应连续");
   assert.equal(await sectionCount("智能家居").innerText(), "2");
-  assert.equal(await sectionCount("未分组").innerText(), "1");
+  assert.equal(await sectionCount("未分组").innerText(), "2");
   await page.screenshot({ path: artifactPath("applied-desktop.png") });
-  console.log("PASS: 应用时新建分组并批量移动，页面与数据库一致，未勾选的保持原样");
+  console.log("PASS: 应用时只移到已有分组，没有新建分组；页面与数据库一致，未勾选的保持原样");
 
   await page.getByRole("button", { name: "撤销" }).click();
   await page.locator(".manage-toast.visible", { hasText: "已撤销" }).waitFor({ timeout: 30000 });
-  assert.equal(groupByName("github", "智能家居"), undefined, "撤销后应删除 AI 新建的空分组");
-  assert.equal(groupByName("github", "影音娱乐"), undefined);
+  assert.ok(groupByName("github", "智能家居"), "撤销不应删除用户自己的分组");
+  assert.equal(tables.github_stars.filter((row) => row.group_id === starGroups.home.id).length, 0);
   assert.ok(ungroupedStars.every((row) => row.group_id === null), "撤销后条目应回到未分组");
   const restoredOrder = [...ungroupedStars].sort((left, right) => left.sort_order - right.sort_order).map((row) => row.id);
   assert.deepEqual(restoredOrder, originalUngroupedOrder);
   assert.equal(await sectionCount("未分组").innerText(), "31");
   const uiOrder = await page.locator("#group-ungrouped .repo-name").allInnerTexts();
   assert.deepEqual(uiOrder.slice(0, 6), ["ollama", "biome", "excalidraw", "core", "mystery", "jellyfin"]);
-  console.log("PASS: 撤销把条目放回原分组和原顺序，并删除 AI 新建的分组");
+  console.log("PASS: 撤销把条目放回原分组和原顺序，已有分组保持不变");
 
   // ---------- 手机宽度下的审阅布局 ----------
   await page.setViewportSize({ width: 390, height: 844 });
@@ -470,6 +475,16 @@ try {
   assert.equal(figma.group_id, bookmarkGroups.design.id);
   assert.equal(news.group_id, bookmarkGroups.reading.id);
   console.log("PASS: 书签按勾选范围整理并保存");
+
+  // ---------- 一个分组都没有时：接口直接拒绝，不请求 AI ----------
+  const requestsBefore = aiRequests.length;
+  tables.groups = tables.groups.filter((row) => row.kind !== "github");
+  for (const row of tables.github_stars) row.group_id = null;
+  const noGroups = await context.request.post(`${base}/api/manage/ai-classify`, { data: { kind: "github", ids: [starByName("ollama/ollama").id] } });
+  assert.equal(noGroups.status(), 409);
+  assert.match((await noGroups.json()).error, /还没有分组/);
+  assert.equal(aiRequests.length, requestsBefore, "没有分组时不应请求 AI");
+  console.log("PASS: 没有任何分组时提示先新建分组，不请求 AI");
 
   assert.deepEqual(aiProblems, []);
   assert.deepEqual(browserErrors, []);

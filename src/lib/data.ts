@@ -54,7 +54,7 @@ export async function getGithubGroups(includePrivate = false) {
   return loadStars(includePrivate);
 }
 
-// AI 整理要用最新数据：刚应用建议新建的分组也要参与下一轮归类，所以绕过数据缓存
+// AI 整理要用最新数据：刚建的分组、刚移动的条目都要反映到下一轮归类，所以绕过数据缓存
 export async function getFreshCollection(kind: "bookmark" | "github"): Promise<BookmarkGroup[] | GithubGroup[]> {
   if (!hasDatabaseConfig()) return kind === "bookmark" ? demoBookmarkGroups : demoGithubGroups;
   return kind === "bookmark" ? queryBookmarks(true) : queryStars(true);

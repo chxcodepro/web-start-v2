@@ -11,8 +11,7 @@ export const maxDuration = 60;
 
 const schema = z.object({
   kind: z.enum(["bookmark", "github"]),
-  ids: z.array(z.string().uuid()).min(1).max(MAX_BATCH_ITEMS),
-  proposedGroups: z.array(z.string().trim().min(1).max(40)).max(30).default([])
+  ids: z.array(z.string().uuid()).min(1).max(MAX_BATCH_ITEMS)
 });
 
 function errorResponse(error: unknown) {
@@ -33,7 +32,9 @@ export async function POST(request: NextRequest) {
     const { config } = resolved;
 
     const groups = await getFreshCollection(body.kind);
-    const prompt = buildClassifyPrompt(body.kind, groups, body.ids, body.proposedGroups);
+    const prompt = buildClassifyPrompt(body.kind, groups, body.ids);
+    // AI 只在现有分组里挑选，一个分组都没有时不必请求
+    if (!prompt.groupKeys.size) return NextResponse.json({ error: "还没有分组，请先新建分组再让 AI 整理", retryable: false }, { status: 409 });
     const engine = { provider: config.label, model: config.model };
     if (!prompt.itemIds.size) return NextResponse.json({ suggestions: [], missing: [], engine });
 
