@@ -22,6 +22,22 @@ type StarredResponse = {
   };
 };
 
+// 「AI 分析」备注时作为资料；没有 README、仓库名不合法或请求失败时返回空字符串
+export async function fetchReadme(fullName: string) {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(fullName)) return "";
+  const token = process.env.GITHUB_TOKEN;
+  try {
+    const response = await fetch(`${apiBase}/repos/${fullName}/readme`, {
+      headers: { Accept: "application/vnd.github.raw+json", "X-GitHub-Api-Version": "2022-11-28", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      cache: "no-store",
+      signal: AbortSignal.timeout(8000)
+    });
+    return response.ok ? (await response.text()).slice(0, 60_000) : "";
+  } catch {
+    return "";
+  }
+}
+
 // 数据库还没执行 003_star_topics.sql 时 PostgREST 会报缺列
 function isMissingTopicsColumn(error: { code?: string; message?: string }) {
   return (error.code === "PGRST204" || error.code === "42703") && /topics/i.test(error.message ?? "");

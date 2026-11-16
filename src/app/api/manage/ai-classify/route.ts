@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { AiRequestError, requestAiJson, resolveAiConfig } from "@/lib/ai";
-import { MAX_BATCH_ITEMS, buildClassifyPrompt, classifySchema, parseClassifyResult } from "@/lib/ai-classify";
+import { MAX_BATCH_ITEMS, MAX_NEW_GROUPS, buildClassifyPrompt, classifySchema, parseClassifyResult } from "@/lib/ai-classify";
 import { getFreshCollection } from "@/lib/data";
 import { requireOwner } from "@/lib/owner";
 
@@ -11,7 +11,9 @@ export const maxDuration = 60;
 
 const schema = z.object({
   kind: z.enum(["bookmark", "github"]),
-  ids: z.array(z.string().uuid()).min(1).max(MAX_BATCH_ITEMS)
+  ids: z.array(z.string().uuid()).min(1).max(MAX_BATCH_ITEMS),
+  // 用户确认要新建的分组；只用现有分组时为空
+  newGroups: z.array(z.object({ name: z.string().trim().min(1).max(40), description: z.string().max(120).optional() })).max(MAX_NEW_GROUPS).default([])
 });
 
 function errorResponse(error: unknown) {
@@ -32,8 +34,8 @@ export async function POST(request: NextRequest) {
     const { config } = resolved;
 
     const groups = await getFreshCollection(body.kind);
-    const prompt = buildClassifyPrompt(body.kind, groups, body.ids);
-    // AI 只在现有分组里挑选，一个分组都没有时不必请求
+    const prompt = buildClassifyPrompt(body.kind, groups, body.ids, body.newGroups);
+    // AI 只在给定的分组里挑选，一个分组都没有时不必请求
     if (!prompt.groupKeys.size) return NextResponse.json({ error: "还没有分组，请先新建分组再让 AI 整理", retryable: false }, { status: 409 });
     const engine = { provider: config.label, model: config.model };
     if (!prompt.itemIds.size) return NextResponse.json({ suggestions: [], missing: [], engine });

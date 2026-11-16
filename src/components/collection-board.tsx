@@ -9,14 +9,15 @@ import { AiOrganizeDialog, type AiApplyResult } from "@/components/ai-organize-d
 import { BookmarkFavicon } from "@/components/bookmark-favicon";
 import { GroupSidebar } from "@/components/group-sidebar";
 import { ManageDialog } from "@/components/manage-dialog";
+import { StarNoteField } from "@/components/star-note-field";
 import { SyncStarsButton } from "@/components/sync-stars-button";
-import { applyItemMoves, moveRequests, revertItemMoves, sourceOrders, type BoardGroup, type BoardItem, type BoardKind, type ItemMove } from "@/lib/board-model";
+import { applyItemMoves, insertGroups, moveRequests, revertItemMoves, sourceOrders, type BoardGroup, type BoardItem, type BoardKind, type ItemMove } from "@/lib/board-model";
 import type { BookmarkGroup, GithubGroup } from "@/lib/types";
 
 type SourceGroups = BookmarkGroup[] | GithubGroup[];
 type StarSortMode = "manual" | "updated-desc" | "updated-asc";
 // AI 整理后的撤销记录；只在对应提示仍显示时可用
-type UndoRecord = { message: string; moves: ItemMove[]; orders: Record<string, string[]> };
+type UndoRecord = { message: string; moves: ItemMove[]; orders: Record<string, string[]>; createdGroupIds: string[] };
 
 type GithubDownloadFile = {
   id: string;
@@ -166,10 +167,6 @@ function isErrorMessage(value: string) {
   return value.includes("失败") || value.includes("不能") || value.includes("请");
 }
 
-function tagsFrom(value: FormDataEntryValue | null) {
-  return String(value ?? "").split(/[,，]/).map((item) => item.trim()).filter(Boolean).slice(0, 20);
-}
-
 function clipboardUrl(value: string) {
   const raw = value.trim().split(/\r?\n/, 1)[0]?.trim() ?? "";
   const candidate = /^https?:\/\//i.test(raw) ? raw : /^[\w.-]+\.[a-z]{2,}(?:[/:?#]|$)/i.test(raw) ? `https://${raw}` : "";
@@ -217,6 +214,8 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
   const downloadRequest = useRef(0);
 
   const closeDialog = useCallback(() => { metadataRequest.current += 1; downloadRequest.current += 1; setDialog(null); setMessage(""); setBookmarkLookup(false); setDownloadLoading(false); }, []);
+  // AI 整理关闭时保留提示，应用后的「已整理 N 项」和撤销按钮要在对话框关掉后显示
+  const closeAiDialog = useCallback(() => setDialog(null), []);
 
   // 右下角提示自动收起；对话框打开时由对话框自己展示消息。带撤销按钮的提示多停留一会
   useEffect(() => {
@@ -523,7 +522,7 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
           return next;
         });
       } else if (dialog?.type === "add-bookmark") {
-        const result = await api("POST", { entity: "bookmark", groupId: dialog.groupId, title: String(data.get("title") ?? ""), url: String(data.get("url") ?? ""), faviconUrl: bookmarkDraft.faviconUrl || null, description: String(data.get("description") ?? ""), tags: tagsFrom(data.get("tags")), isPublic: data.get("isPublic") === "on" });
+        const result = await api("POST", { entity: "bookmark", groupId: dialog.groupId, title: String(data.get("title") ?? ""), url: String(data.get("url") ?? ""), faviconUrl: bookmarkDraft.faviconUrl || null, description: String(data.get("description") ?? ""), tags: [], isPublic: data.get("isPublic") === "on" });
         const created = result.bookmark;
         const item: BoardItem = {
           id: String(created.id),
@@ -570,7 +569,8 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
     const href = String(data.get("url") ?? item.href).trim();
     const description = String(data.get("description") ?? "").trim();
     const note = String(data.get("note") ?? "").trim();
-    const nextTags = tagsFrom(data.get("tags"));
+    // 标签不再在界面上编辑，保存时保留原有标签（搜索和 AI 整理仍会用到）
+    const nextTags = item.tags;
     const isPublic = data.get("isPublic") === "on";
     try {
       if (kind === "bookmark") await api("PATCH", { entity: "bookmark", id: item.id, groupId, title, url: href, faviconUrl: href === item.href ? undefined : null, description, tags: nextTags, isPublic });
@@ -609,16 +609,17 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
     finally { setBusy(false); }
   }
 
+  // 应用后对话框留着显示整理结果；右下角提示（带撤销）等对话框关掉后再出现
   function handleAiApplied(result: AiApplyResult) {
-    const orders = sourceOrders(groups, result.moves);
-    setGroupsWithMotion(applyItemMoves(groups, result.moves));
+    const withCreated = insertGroups(groups, result.created);
+    const orders = sourceOrders(withCreated, result.moves);
+    setGroupsWithMotion(applyItemMoves(withCreated, result.moves));
     setSelected(new Set());
-    setDialog(null);
     const text = result.error
       ? `${result.moves.length ? `已整理 ${result.moves.length} 项，其余` : "AI 整理"}保存失败：${result.error}`
       : `已整理 ${result.moves.length} 项`;
     setMessage(text);
-    setUndo(result.moves.length ? { message: text, moves: result.moves, orders } : null);
+    setUndo(result.moves.length || result.created.length ? { message: text, moves: result.moves, orders, createdGroupIds: result.created.map((group) => group.id) } : null);
   }
 
   async function undoAiOrganize() {
@@ -636,9 +637,20 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
         reverted.push(...record.moves.filter((move) => move.from === request.target));
       }
     } catch (error) { failure = error instanceof Error ? error.message : "撤销失败"; }
-    setGroupsWithMotion(revertItemMoves(groups, reverted, record.orders));
+    let next = revertItemMoves(groups, reverted, record.orders);
+    // 条目全部放回后，删掉这次 AI 新建、已经变空的分组；用户原有的分组不动
+    for (const id of failure ? [] : record.createdGroupIds) {
+      if (next.find((group) => group.id === id)?.items.length) continue;
+      try {
+        await api("DELETE", { entity: "group", id, kind });
+        next = next.filter((group) => group.id !== id);
+      } catch {}
+    }
+    setGroupsWithMotion(next);
     setMessage(failure ? `撤销失败：${failure}` : "已撤销");
     setBusy(false);
+    // 从整理结果页撤销时，撤销完成后关掉对话框，由右下角提示告知结果
+    setDialog((current) => current?.type === "ai" ? null : current);
   }
 
   const detailsItem = dialog?.type === "details" ? findItem(dialog.itemId) : null;
@@ -754,7 +766,7 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
     <ManageDialog open={dialog?.type === "add-bookmark"} title="添加书签" description={dialog?.type === "add-bookmark" ? `保存后会出现在「${groups.find((group) => group.id === dialog.groupId)?.name ?? "当前分组"}」末尾` : ""} onClose={closeDialog}>
       <form className="dialog-form" onSubmit={submitCreate}>
         <button type="button" className="clipboard-fill-button" disabled={bookmarkLookup} onClick={() => void fillBookmarkFromClipboard()}>{bookmarkLookup ? <LoaderCircle className="spin" size={17} aria-hidden="true" /> : <ClipboardPaste size={17} aria-hidden="true" />}{bookmarkLookup ? "正在读取网站信息" : "从剪贴板读取链接"}</button>
-        <label>名称<input data-autofocus name="title" required maxLength={80} value={bookmarkDraft.title} onChange={(event) => setBookmarkDraft((current) => ({ ...current, title: event.target.value }))} /></label><label>网址<input name="url" type="url" required placeholder="https://" value={bookmarkDraft.url} onChange={(event) => setBookmarkDraft((current) => ({ ...current, url: event.target.value, faviconUrl: "" }))} /></label><label>描述<input name="description" maxLength={300} /></label><label>标签<input name="tags" placeholder="工具, 设计" /></label><label className="dialog-check"><input type="checkbox" name="isPublic" defaultChecked />公开显示</label>
+        <label>名称<input data-autofocus name="title" required maxLength={80} value={bookmarkDraft.title} onChange={(event) => setBookmarkDraft((current) => ({ ...current, title: event.target.value }))} /></label><label>网址<input name="url" type="url" required placeholder="https://" value={bookmarkDraft.url} onChange={(event) => setBookmarkDraft((current) => ({ ...current, url: event.target.value, faviconUrl: "" }))} /></label><label>描述<input name="description" maxLength={300} /></label><label className="switch-field"><span className="switch-copy"><strong>公开显示</strong><small>访客也能在首页看到这个书签</small></span><input type="checkbox" role="switch" name="isPublic" defaultChecked /></label>
         <div className="dialog-actions"><button type="button" className="soft-button" onClick={closeDialog}>取消</button><button type="submit" className="primary-button" disabled={busy}><Check size={17} />添加</button></div>{message && <p className="dialog-message" role="status">{message}</p>}
       </form>
     </ManageDialog>
@@ -765,26 +777,32 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
 
     {detailsItem && <ManageDialog
       open
-      title={kind === "bookmark" ? "书签设置" : "项目备注与设置"}
+      title={kind === "bookmark" ? "书签设置" : detailsItem.title}
+      icon={<BookmarkFavicon className={`dialog-favicon ${kind === "github" ? "is-avatar" : ""}`} src={detailsItem.iconUrl ?? null} title={detailsItem.title} fallback={kind === "github" ? <Github size={20} /> : undefined} />}
       description={kind === "github"
-        ? <a className="dialog-heading-link" href={detailsItem.href} target="_blank" rel="noreferrer">{detailsItem.canonicalTitle || detailsItem.href}</a>
+        ? <span className="details-meta">
+          <a className="dialog-heading-link" href={detailsItem.href} target="_blank" rel="noreferrer">{detailsItem.canonicalTitle || detailsItem.href}</a>
+          {detailsItem.language && <span>{detailsItem.language}</span>}
+          {detailsItem.updatedAt && <span>{updatedLabel(detailsItem.updatedAt)}</span>}
+        </span>
         : detailsItem.canonicalTitle || detailsItem.href}
+      className="details-dialog"
       onClose={closeDialog}
     >
-      <form className="dialog-form" onSubmit={(event) => void submitDetails(event, detailsItem)}>
+      <form className="dialog-form details-form" onSubmit={(event) => void submitDetails(event, detailsItem)}>
         {kind === "bookmark" && <><label>名称<input data-autofocus name="title" required maxLength={80} defaultValue={detailsItem.title} /></label><label>网址<input name="url" type="url" required defaultValue={detailsItem.href} /></label><label>描述<input name="description" maxLength={300} defaultValue={detailsItem.description} /></label></>}
-        {kind === "github" && <label>备注<textarea data-autofocus name="note" maxLength={500} defaultValue={detailsItem.note || detailsItem.description} rows={4} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); if (!detailsCreatingGroup && !busy) event.currentTarget.form?.requestSubmit(); } }} /></label>}
+        {kind === "github" && <StarNoteField key={detailsItem.id} item={detailsItem} canSubmit={!detailsCreatingGroup && !busy} />}
         <div className="dialog-group-field">
           {detailsCreatingGroup
             ? <div className="dialog-group-create"><label>新分组<input autoFocus aria-label="新分组名称" value={detailsGroupDraft} maxLength={40} placeholder="输入名称后按回车" onChange={(event) => setDetailsGroupDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void createDetailsGroup(); } if (event.key === "Escape") { event.preventDefault(); setDetailsCreatingGroup(false); setDetailsGroupDraft(""); } }} /></label><button type="button" className="dialog-group-confirm" disabled={busy || !detailsGroupDraft.trim()} onClick={() => void createDetailsGroup()}><Check size={16} aria-hidden="true" />确认</button><button type="button" className="dialog-group-add" disabled={busy} onClick={() => { setDetailsCreatingGroup(false); setDetailsGroupDraft(""); setMessage(""); }}><X size={16} aria-hidden="true" />取消</button></div>
             : <><label>分组<select name="groupId" value={detailsGroupId || detailsItem.groupId || "ungrouped"} onChange={(event) => setDetailsGroupId(event.target.value)}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>{kind === "github" && <button type="button" className="dialog-group-add" disabled={busy} onClick={() => { setDetailsCreatingGroup(true); setDetailsGroupDraft(""); setMessage(""); }}><Plus size={16} aria-hidden="true" />新建分组</button>}</>}
         </div>
-        <label>标签<input name="tags" defaultValue={detailsItem.tags.join(", ")} /></label><label className="dialog-check"><input type="checkbox" name="isPublic" defaultChecked={detailsItem.isPublic} />公开显示</label>
+        <label className="switch-field"><span className="switch-copy"><strong>公开显示</strong><small>{kind === "github" ? "访客也能在 Star 页面看到这个项目" : "访客也能在首页看到这个书签"}</small></span><input type="checkbox" role="switch" name="isPublic" defaultChecked={detailsItem.isPublic} /></label>
         <div className="dialog-actions split"><button type="button" className="danger-button" disabled={busy} onClick={() => void removeItem(detailsItem)}><Trash2 size={16} />{kind === "bookmark" ? "删除" : "取消 Star"}</button><span /><button type="button" className="soft-button" onClick={closeDialog}>取消</button><button type="submit" className="primary-button" disabled={busy || detailsCreatingGroup}><Check size={17} />保存</button></div>{message && <p className="dialog-message" role="status">{message}</p>}
       </form>
     </ManageDialog>}
 
-    {dialog?.type === "ai" && <AiOrganizeDialog kind={kind} groups={groups} selectedIds={selected} onClose={closeDialog} onApplied={handleAiApplied} />}
+    {dialog?.type === "ai" && <AiOrganizeDialog kind={kind} groups={groups} selectedIds={selected} onClose={closeAiDialog} onApplied={handleAiApplied} onUndo={() => void undoAiOrganize()} />}
 
     {downloadItem && <ManageDialog
       open

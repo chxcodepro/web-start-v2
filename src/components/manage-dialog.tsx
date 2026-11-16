@@ -3,10 +3,12 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 
-export function ManageDialog({ open, title, description, onClose, className, children }: {
+export function ManageDialog({ open, title, description, icon, onClose, className, children }: {
   open: boolean;
   title: string;
   description?: ReactNode;
+  // 标题左侧的头像或图标，比如项目头像、网站图标
+  icon?: ReactNode;
   onClose: () => void;
   className?: string;
   children: ReactNode;
@@ -50,7 +52,10 @@ export function ManageDialog({ open, title, description, onClose, className, chi
   return <div className="manage-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <div ref={panelRef} className={`manage-dialog glass ${className ?? ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined}>
       <header className="manage-dialog-heading">
-        <div><h2 id={titleId}>{title}</h2>{description && <p id={descriptionId}>{description}</p>}</div>
+        <div className={icon ? "manage-dialog-title has-icon" : "manage-dialog-title"}>
+          {icon && <span className="manage-dialog-icon" aria-hidden="true">{icon}</span>}
+          <div><h2 id={titleId}>{title}</h2>{description && <p id={descriptionId}>{description}</p>}</div>
+        </div>
         <button type="button" className="dialog-close" aria-label="关闭" onClick={onClose}><X size={19} aria-hidden="true" /></button>
       </header>
       <div className="manage-dialog-body">{children}</div>

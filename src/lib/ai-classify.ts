@@ -1,16 +1,18 @@
 import { z } from "zod";
+import { NEW_GROUP_PREFIX, groupNameKey, normalizeGroupName } from "@/lib/group-name";
 import type { Bookmark, BookmarkGroup, GithubGroup, GithubStar } from "@/lib/types";
 
-// AI 归类：把条目和用户现有分组整理成提示词，再把模型输出校验并映射回真实 id
-// 只在用户已有的分组里挑选，不提议新分组；新分组由用户自己建
-// 只有类型导入使用路径别名，单元测试可以直接导入本文件
+// AI 归类：把条目和分组整理成提示词，再把模型输出校验并映射回真实 id
+// 模型只能从给定的分组列表里选：用户现有的分组，加上这次用户确认要新建的分组；列表外的名称一律忽略
 
 export type ClassifyKind = "bookmark" | "github";
 export type Confidence = "high" | "medium" | "low";
+// 这次准备新建的分组：AI 规划后由用户确认，也可以是用户自己加的
+export type NewGroupDraft = { name: string; description?: string };
 
 export type ClassifySuggestion = {
   id: string;
-  // 目标分组 id；没有合适的分组时就是条目当前所在的分组，表示保持不动
+  // 目标分组 id；新建分组用「new:分组名」；没有合适的分组时就是条目当前所在的分组，表示保持不动
   groupId: string;
   confidence: Confidence;
   reason: string;
@@ -27,15 +29,16 @@ type AnyItem = Bookmark | GithubStar;
 type AnyGroup = BookmarkGroup | GithubGroup;
 
 export const MAX_BATCH_ITEMS = 40;
+export const MAX_NEW_GROUPS = 8;
 const EXAMPLES_PER_GROUP = 4;
 const UNGROUPED = "ungrouped";
 
-function clip(value: string | null | undefined, max: number) {
+export function clip(value: string | null | undefined, max: number) {
   const text = (value ?? "").replace(/\s+/g, " ").trim();
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-function siteLabel(url: string) {
+export function siteLabel(url: string) {
   try {
     const parsed = new URL(url);
     const path = parsed.pathname === "/" ? "" : parsed.pathname;
@@ -45,12 +48,7 @@ function siteLabel(url: string) {
   }
 }
 
-// 模型偶尔直接写分组名；比较时忽略引号、空格和大小写，「AI 工具」和「ai工具」视为同一个分组
-export function groupNameKey(value: string) {
-  return value.replace(/[「」『』《》"“”'‘’]/g, "").replace(/\s+/g, "").toLowerCase();
-}
-
-function exampleLabel(kind: ClassifyKind, item: AnyItem) {
+export function exampleLabel(kind: ClassifyKind, item: AnyItem) {
   if (kind === "bookmark") {
     const bookmark = item as Bookmark;
     return `${clip(bookmark.title, 30)}（${siteLabel(bookmark.url).split("/")[0]}）`;
@@ -89,11 +87,12 @@ function describeItem(kind: ClassifyKind, item: AnyItem, n: number, current: str
   };
 }
 
-function systemPrompt(kind: ClassifyKind) {
+function systemPrompt(kind: ClassifyKind, hasNewGroups: boolean) {
   const subject = kind === "bookmark" ? "网站书签" : "GitHub 仓库";
   return [
     `你是个人浏览器起始页的整理助手，负责把${subject}归到用户已有的分组里。`,
     "分组都是用户自己建的。先看每个分组的名称和示例，理解用户的分法，再按同样的标准归类；还没有条目的分组按名称理解。",
+    ...(hasNewGroups ? ["分组列表里 new 为 true 的是用户这次确认要新建的分组，按名称和 description 理解，和已有分组一样可以选。"] : []),
     "",
     "规则：",
     "1. 只能从分组列表里选，group 填分组编号（如 g1）。不要新建分组，也不要写列表里没有的分组名。",
@@ -109,7 +108,22 @@ function systemPrompt(kind: ClassifyKind) {
   ].join("\n");
 }
 
-export function buildClassifyPrompt(kind: ClassifyKind, groups: BookmarkGroup[] | GithubGroup[], ids: string[]): ClassifyPrompt {
+// 规范化用户确认的新分组：去掉空名、和现有分组或彼此重名的，最多保留 MAX_NEW_GROUPS 个
+export function normalizeNewGroups(drafts: NewGroupDraft[], existingNames: string[]) {
+  const taken = new Set([...existingNames, "未分组"].map(groupNameKey));
+  const result: Array<{ name: string; description: string }> = [];
+  for (const draft of drafts) {
+    const name = normalizeGroupName(draft.name);
+    const key = groupNameKey(name);
+    if (!key || taken.has(key)) continue;
+    taken.add(key);
+    result.push({ name, description: clip(draft.description, 40) });
+    if (result.length >= MAX_NEW_GROUPS) break;
+  }
+  return result;
+}
+
+export function buildClassifyPrompt(kind: ClassifyKind, groups: BookmarkGroup[] | GithubGroup[], ids: string[], newGroups: NewGroupDraft[] = []): ClassifyPrompt {
   const batch = new Set(ids);
   const allGroups = groups as AnyGroup[];
   const realGroups = allGroups.filter((group) => group.id !== UNGROUPED);
@@ -120,6 +134,9 @@ export function buildClassifyPrompt(kind: ClassifyKind, groups: BookmarkGroup[] 
     groupKeys.set(key, { id: group.id, name: group.name });
     keyById.set(group.id, key);
   });
+  // 新分组还没有数据库 id，编号用 n1、n2…，结果里用「new:分组名」表示
+  const planned = normalizeNewGroups(newGroups, realGroups.map((group) => group.name));
+  planned.forEach((draft, index) => groupKeys.set(`n${index + 1}`, { id: `${NEW_GROUP_PREFIX}${draft.name}`, name: draft.name }));
 
   const located = new Map<string, { item: AnyItem; groupId: string }>();
   for (const group of allGroups) {
@@ -142,12 +159,13 @@ export function buildClassifyPrompt(kind: ClassifyKind, groups: BookmarkGroup[] 
   }
 
   // 每组附几个不在本批里的条目当示例，让模型学习用户自己的分法；空分组也列出，用户可以先建好分组再让 AI 填
-  const catalog = realGroups.map((group) => ({
+  const catalog: Array<Record<string, unknown>> = realGroups.map((group) => ({
     key: keyById.get(group.id),
     name: group.name,
     count: group.items.length,
     examples: (group.items as AnyItem[]).filter((item) => !batch.has(item.id)).slice(0, EXAMPLES_PER_GROUP).map((item) => exampleLabel(kind, item))
   }));
+  planned.forEach((draft, index) => catalog.push({ key: `n${index + 1}`, name: draft.name, new: true, description: draft.description || undefined, count: 0, examples: [] }));
 
   const user = [
     "分组列表（key 是分组编号，count 是现有条目数，examples 是其中几项）：",
@@ -158,7 +176,7 @@ export function buildClassifyPrompt(kind: ClassifyKind, groups: BookmarkGroup[] 
   ].join("\n");
 
   return {
-    messages: [{ role: "system", content: systemPrompt(kind) }, { role: "user", content: user }],
+    messages: [{ role: "system", content: systemPrompt(kind, planned.length > 0) }, { role: "user", content: user }],
     itemIds,
     currentGroups,
     groupKeys

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyItemMoves, moveRequests, revertItemMoves, sourceOrders } from "../src/lib/board-model.ts";
+import { applyItemMoves, insertGroups, moveRequests, revertItemMoves, sourceOrders } from "../src/lib/board-model.ts";
 
 const item = (id, groupId) => ({ id, groupId, title: id, href: `https://example.com/${id}`, description: "", note: "", tags: [], isPublic: true });
 const group = (id, ids) => ({ id, name: id, isPublic: true, items: ids.map((value) => item(value, id === "ungrouped" ? null : id)) });
@@ -25,6 +25,11 @@ test("undo restores original groups and positions", () => {
   assert.deepEqual(ids(revertItemMoves(after, moves, orders)), ids(before));
   // 只撤销成功的那部分
   assert.deepEqual(ids(revertItemMoves(after, moves.slice(0, 1), orders)), { tools: ["a", "b"], docs: ["c", "z"], ungrouped: ["x", "y"] });
+});
+
+test("new groups go before the ungrouped bucket", () => {
+  assert.deepEqual(insertGroups(board(), [group("ai", [])]).map((entry) => entry.id), ["tools", "docs", "ai", "ungrouped"]);
+  assert.deepEqual(insertGroups([group("daily", [])], [group("ai", [])]).map((entry) => entry.id), ["daily", "ai"]);
 });
 
 test("one move request per target saves the final order", () => {

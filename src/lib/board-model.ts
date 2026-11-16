@@ -33,6 +33,13 @@ export function databaseGroupId(groupId: string) {
   return groupId === UNGROUPED_ID ? null : groupId;
 }
 
+// 新分组排在「未分组」前面，和手动新建分组的位置一致
+export function insertGroups(groups: BoardGroup[], created: BoardGroup[]) {
+  if (!created.length) return groups;
+  const index = groups.findIndex((group) => group.id === UNGROUPED_ID);
+  return index < 0 ? [...groups, ...created] : [...groups.slice(0, index), ...created, ...groups.slice(index)];
+}
+
 // 按 moves 的顺序把条目追加到目标分组末尾
 export function applyItemMoves(groups: BoardGroup[], moves: ItemMove[]) {
   const targets = new Map(moves.map((move) => [move.itemId, move.to]));

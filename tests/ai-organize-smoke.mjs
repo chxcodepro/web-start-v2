@@ -172,6 +172,7 @@ const db = createServer(async (request, response) => {
 // ---------- 模拟 AI 接口：按 OpenAI、Anthropic、Gemini 三种格式收发 ----------
 const aiProblems = [];
 const aiRequests = [];
+const planRequests = [];
 let failNextStatus = 0;
 let transientServed = false;
 let jellyfinSeen = 0;
@@ -214,13 +215,13 @@ function checkRequest(headers, path, body) {
     if (headers.authorization !== "Bearer sk-smoke-test") problem("密钥请求头不对");
     if (!String(headers["anthropic-beta"] ?? "").includes("server-side-fallback-2026-07-01") || body.fallbacks !== "default") problem("没有启用服务端兜底");
     if (body.output_config?.effort !== "low") problem("effort 应为 low");
-    if (body.output_config?.format?.type !== "json_schema" || !body.output_config.format.schema?.properties?.results) problem("没有使用结构化输出");
+    if (body.output_config?.format?.type !== "json_schema" || !hasSchema(body.output_config.format.schema)) problem("没有使用结构化输出");
     if (body.max_tokens !== 16000 || "temperature" in body || "thinking" in body) problem("max_tokens、temperature 或 thinking 不对");
   } else if (provider === "gemini") {
     if (path !== `/v1beta/models/${expected.model}:generateContent`) problem(`路径不对：${path}`);
     if (headers["x-goog-api-key"] !== "sk-smoke-test") problem("密钥请求头不对");
     const config = body.generationConfig ?? {};
-    if (config.responseMimeType !== "application/json" || !config.responseJsonSchema?.properties?.results) problem("没有使用 JSON Schema 输出");
+    if (config.responseMimeType !== "application/json" || !hasSchema(config.responseJsonSchema)) problem("没有使用 JSON Schema 输出");
     if (config.thinkingConfig?.thinkingLevel !== "LOW" || config.maxOutputTokens !== 16000) problem("thinkingLevel 或 maxOutputTokens 不对");
   } else {
     if (path !== "/chat/completions") problem(`路径不对：${path}`);
@@ -231,7 +232,7 @@ function checkRequest(headers, path, body) {
       if (body.temperature !== 0.2 || body.max_tokens !== 16000) problem("temperature 或 max_tokens 不对");
     } else {
       const format = body.response_format;
-      if (format?.type !== "json_schema" || format.json_schema?.strict !== true || !format.json_schema?.schema?.properties?.results) problem("没有使用结构化输出");
+      if (format?.type !== "json_schema" || format.json_schema?.strict !== true || !hasSchema(format.json_schema?.schema)) problem("没有使用结构化输出");
       if (body.max_completion_tokens !== 16000 || "max_tokens" in body) problem("应使用 max_completion_tokens");
       if (body.reasoning_effort !== "low") problem("推理强度应为 low");
       if ("thinking" in body || "temperature" in body) problem("不应发送 thinking 或 temperature");
@@ -239,7 +240,13 @@ function checkRequest(headers, path, body) {
   }
   if (provider !== "gemini" && body.model !== expected.model) problem(`模型不对：${body.model}`);
   const schema = body.output_config?.format?.schema ?? body.generationConfig?.responseJsonSchema ?? body.response_format?.json_schema?.schema;
-  if (schema && "newGroup" in schema.properties.results.items.properties) problem("结构化输出里不应再有 newGroup");
+  const fields = schema?.properties?.results?.items?.properties;
+  if (fields && "newGroup" in fields) problem("结构化输出里不应再有 newGroup");
+}
+
+// 归类请求的输出格式里有 results，规划新分组的请求里是 groups
+function hasSchema(schema) {
+  return Boolean(schema?.properties?.results || schema?.properties?.groups);
 }
 
 function errorBody(format, status, message) {
@@ -266,9 +273,16 @@ const ai = createServer(async (request, response) => {
     const lines = prompt.user.split("\n");
     const groups = JSON.parse(lines[1]);
     const items = JSON.parse(lines.at(-1));
-    aiRequests.push({ names: items.map((item) => item.repo ?? item.title) });
     checkRequest(request.headers, path, body);
     if (!/json/.test(prompt.system)) aiProblems.push("系统提示词缺少 json 字样");
+    // 「允许新建分组」的规划请求：提议一个新分组，外加一个和现有分组重名的（服务端应去掉）
+    if (/最多提议 5 个新分组/.test(prompt.system)) {
+      planRequests.push(items.length);
+      const plan = { groups: [{ name: "影音娱乐", description: "家庭影音和流媒体", count: 2 }, { name: "开发工具", description: "和现有分组重名", count: 3 }] };
+      response.end(JSON.stringify(replyBody(prompt.format, JSON.stringify(plan), false)));
+      return;
+    }
+    aiRequests.push({ names: items.map((item) => item.repo ?? item.title) });
     if (/newGroup|已提议/.test(prompt.system + prompt.user)) aiProblems.push("提示词里不应再出现新分组");
     if (items[0]?.repo && groups.find((group) => group.name === "智能家居")?.count !== 0) aiProblems.push("用户建好的空分组应提供给 AI");
 
@@ -385,7 +399,8 @@ try {
   assert.match(await dialog.locator(".ai-summary").innerText(), /AI 建议移动 29 项/);
   assert.match(await dialog.getByRole("alert").innerText(), /1 项没有拿到建议/);
   assert.match(await dialog.locator(".ai-keep summary").innerText(), /保持不动\s*1/);
-  console.log("PASS: 分组编号和分组名都能映射，事先建好的空分组也会用上；拿不准的保持不动；漏掉的条目单独列出");
+  assert.ok(await smartHome.getByText("esphome/esphome description").isVisible(), "审阅时每一项应带上简介");
+  console.log("PASS: 分组编号和分组名都能映射，事先建好的空分组也会用上；拿不准的保持不动；漏掉的条目单独列出；每一项带上简介");
 
   await dialog.getByRole("button", { name: "重新分析" }).click();
   await dialog.locator(".ai-keep summary", { hasText: /保持不动\s*2/ }).waitFor({ timeout: 30000 });
@@ -403,8 +418,18 @@ try {
   assert.equal(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth), true);
   await page.screenshot({ path: artifactPath("review-desktop.png") });
   await applyButton.click();
+  // 应用后显示整理结果：按分组列出放进去的项目和简介
+  const resultDialog = page.getByRole("dialog", { name: "整理结果" });
+  await resultDialog.waitFor({ timeout: 30000 });
+  assert.match(await resultDialog.locator(".ai-summary").innerText(), /已把 29 项放进 4 个分组/);
+  const smartHomeResult = resultDialog.getByRole("region", { name: "放进 智能家居" });
+  assert.equal(await smartHomeResult.locator(".ai-row").count(), 2);
+  assert.ok(await smartHomeResult.getByText("home-assistant/core description").isVisible(), "整理结果里应带上项目简介");
+  assert.match(await resultDialog.locator(".ai-keep summary").innerText(), /没有移动\s*2/);
+  await page.screenshot({ path: artifactPath("result-desktop.png") });
+  await resultDialog.getByRole("button", { name: "完成" }).click();
   await page.locator(".manage-toast.visible", { hasText: "已整理 29 项" }).waitFor({ timeout: 30000 });
-  assert.equal(await dialog.count(), 0);
+  assert.equal(await resultDialog.count(), 0);
 
   assert.equal(tables.groups.filter((row) => row.kind === "github").length, 4, "不应新建任何分组");
   assert.equal(starByName("home-assistant/core").group_id, starGroups.home.id);
@@ -419,7 +444,7 @@ try {
   assert.equal(await sectionCount("智能家居").innerText(), "2");
   assert.equal(await sectionCount("未分组").innerText(), "2");
   await page.screenshot({ path: artifactPath("applied-desktop.png") });
-  console.log("PASS: 应用时只移到已有分组，没有新建分组；页面与数据库一致，未勾选的保持原样");
+  console.log("PASS: 应用后显示整理结果（按分组列出，带简介）；只移到已有分组，页面与数据库一致，未勾选的保持原样");
 
   await page.getByRole("button", { name: "撤销" }).click();
   await page.locator(".manage-toast.visible", { hasText: "已撤销" }).waitFor({ timeout: 30000 });
@@ -446,6 +471,43 @@ try {
   await dialog.waitFor({ state: "detached" });
   console.log("PASS: 手机宽度下审阅列表没有横向溢出");
 
+  // ---------- 允许新建分组：先规划、确认，再归类 ----------
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole("button", { name: "AI 整理" }).click();
+  await dialog.getByRole("radio", { name: /允许新建分组/ }).check();
+  await dialog.getByRole("button", { name: "下一步" }).click();
+  const planNames = dialog.getByRole("textbox", { name: "新分组名称", exact: true });
+  await planNames.first().waitFor({ timeout: 60000 });
+  assert.equal(await planNames.count(), 1, "和现有分组重名的提议应被去掉");
+  assert.equal(await planNames.first().inputValue(), "影音娱乐");
+  assert.match(await dialog.locator(".ai-plan-copy small").first().innerText(), /家庭影音和流媒体 · 约 2 项/);
+  assert.deepEqual(planRequests, [31], "规划时应一次看完这次要整理的全部条目");
+  await dialog.getByRole("textbox", { name: "要新建的分组名称" }).fill("下载工具");
+  await dialog.getByRole("button", { name: "添加", exact: true }).click();
+  assert.equal(await planNames.count(), 2);
+  await page.screenshot({ path: artifactPath("plan-desktop.png") });
+  await dialog.getByRole("button", { name: "开始归类" }).click();
+  await applyButton.waitFor({ timeout: 90000 });
+  const mediaSection = dialog.getByRole("region", { name: "移到 影音娱乐" });
+  assert.equal(await mediaSection.locator(".ai-row").count(), 1);
+  assert.ok(await mediaSection.getByText("新建", { exact: true }).isVisible());
+  assert.equal(await dialog.getByRole("region", { name: "移到 下载工具" }).count(), 0, "没有条目的新分组不应出现");
+  await applyButton.click();
+  const createResult = page.getByRole("dialog", { name: "整理结果" });
+  await createResult.waitFor({ timeout: 30000 });
+  assert.ok(await createResult.getByRole("region", { name: "放进 影音娱乐" }).getByText("新建", { exact: true }).isVisible());
+  const mediaGroup = groupByName("github", "影音娱乐");
+  assert.ok(mediaGroup, "应新建「影音娱乐」");
+  assert.equal(groupByName("github", "下载工具"), undefined, "没有条目的新分组不应创建");
+  assert.equal(starByName("jellyfin/jellyfin").group_id, mediaGroup.id);
+  await createResult.getByRole("button", { name: "撤销" }).click();
+  await page.locator(".manage-toast.visible", { hasText: "已撤销" }).waitFor({ timeout: 30000 });
+  assert.equal(await createResult.count(), 0);
+  assert.equal(groupByName("github", "影音娱乐"), undefined, "撤销后应删除这次新建的空分组");
+  assert.ok(groupByName("github", "智能家居"), "用户原有的分组不应被删除");
+  assert.ok(ungroupedStars.every((row) => row.group_id === null), "撤销后条目应回到未分组");
+  console.log("PASS: 允许新建分组时先规划、确认再归类；只创建有条目的新分组；从结果页撤销会删除新建的分组");
+
   // ---------- 书签：接口报错与勾选范围 ----------
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(base);
@@ -469,6 +531,7 @@ try {
   assert.equal(await applyButton.innerText(), "应用 2 项");
   await page.screenshot({ path: artifactPath("bookmarks-review.png") });
   await applyButton.click();
+  await page.getByRole("dialog", { name: "整理结果" }).getByRole("button", { name: "完成" }).click();
   await page.locator(".manage-toast.visible", { hasText: "已整理 2 项" }).waitFor({ timeout: 30000 });
   const figma = tables.bookmarks.find((row) => row.title === "Figma");
   const news = tables.bookmarks.find((row) => row.title === "Hacker News");

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildClassifyPrompt, classifySchema, groupNameKey, parseClassifyResult } from "../src/lib/ai-classify.ts";
+import "./register-alias.mjs";
+
+const { buildClassifyPrompt, classifySchema, parseClassifyResult } = await import("../src/lib/ai-classify.ts");
+const { groupNameKey, normalizeGroupName } = await import("../src/lib/group-name.ts");
 
 const star = (id, fullName, extra = {}) => ({
   id, githubRepoId: 1, groupId: null, fullName, displayName: null, htmlUrl: `https://github.com/${fullName}`,
@@ -103,7 +106,27 @@ test("made-up groups, unsure or missing answers keep items where they are", () =
   assert.throws(() => parseClassifyResult({ answer: "好的" }, prompt), /格式不正确/);
 });
 
+test("confirmed new groups join the closed list and map to new: ids", () => {
+  const prompt = buildClassifyPrompt("github", starGroups(), ["ollama", "biome"], [
+    { name: "「本地 部署」", description: "本地运行的大模型工具" },
+    { name: "开发工具" },
+    { name: "本地部署" }
+  ]);
+  // 和现有分组重名、彼此重复的新分组被去掉
+  assert.deepEqual([...prompt.groupKeys].slice(2), [["n1", { id: "new:本地 部署", name: "本地 部署" }]]);
+  const [system, payload] = prompt.messages.map((message) => message.content);
+  assert.match(system, /new 为 true/);
+  const catalog = JSON.parse(payload.split("\n")[1]);
+  assert.deepEqual(catalog.at(-1), { key: "n1", name: "本地 部署", new: true, description: "本地运行的大模型工具", count: 0, examples: [] });
+  const result = parseClassifyResult({ results: [
+    { n: 1, group: "n1", confidence: "high", reason: "本地运行大模型" },
+    { n: 2, group: "本地部署", confidence: "medium", reason: "按名称也能识别" }
+  ] }, prompt);
+  assert.deepEqual(result.suggestions.map((item) => item.groupId), ["new:本地 部署", "new:本地 部署"]);
+});
+
 test("group names are compared without spaces, quotes or case", () => {
+  assert.equal(normalizeGroupName("  “AI   工具” "), "AI 工具");
   assert.equal(groupNameKey("  “AI   工具” "), "ai工具");
   assert.equal(groupNameKey("「AI 工具」"), groupNameKey("ai工具"));
   assert.notEqual(groupNameKey("AI 工具"), groupNameKey("AI 应用"));
