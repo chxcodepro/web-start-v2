@@ -79,25 +79,31 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .nav-link.icon-only { width: 44px; padding: 0; justify-content: center; }
 .nav-link:hover { background: rgba(255,255,255,.12); color: white; }
 .nav-link.active { color: white; background: rgba(255,255,255,.18); box-shadow: none; }
-.dock-button { position: fixed; right: var(--dock-inset); bottom: var(--dock-inset); z-index: 40; width: var(--dock-size); height: var(--dock-size); padding: 0; border: 0; display: grid; place-items: center; border-radius: 14px; background: rgba(235,240,242,.16); color: rgba(255,255,255,.92); box-shadow: 0 10px 26px rgba(10,15,20,.2); backdrop-filter: blur(18px) saturate(125%); cursor: pointer; transition: background-color 160ms ease-out, color 160ms ease-out, box-shadow 160ms ease-out, transform 120ms ease-out; }
-.dock-button svg { filter: drop-shadow(0 1px 3px rgba(0,0,0,.35)); }
-.dock-button:hover { background: rgba(255,255,255,.26); transform: translateY(-1px); }
-.dock-button:active { transform: scale(.96); }
-.dock-button:focus-visible { outline: 2px solid rgba(146,196,255,.9); outline-offset: 3px; }
+/* 右下角的方形玻璃按钮；管理菜单展开的操作沿用同一尺寸和质感 */
+.dock-button, .manage-action { width: var(--dock-size); height: var(--dock-size); padding: 0; border: 0; display: grid; place-items: center; border-radius: 14px; background: rgba(235,240,242,.16); color: rgba(255,255,255,.92); box-shadow: 0 10px 26px rgba(10,15,20,.2); backdrop-filter: blur(18px) saturate(125%); cursor: pointer; transition: background-color 160ms ease-out, color 160ms ease-out, box-shadow 160ms ease-out, transform 120ms ease-out; }
+.dock-button { position: fixed; right: var(--dock-inset); bottom: var(--dock-inset); z-index: 40; }
+.dock-button svg, .manage-action svg { filter: drop-shadow(0 1px 3px rgba(0,0,0,.35)); }
+.dock-button:hover, .manage-action:hover:not(:disabled) { background: rgba(255,255,255,.26); transform: translateY(-1px); }
+.dock-button:active, .manage-action:active:not(:disabled) { transform: scale(.96); }
+.dock-button:focus-visible, .manage-action:focus-visible { outline: 2px solid rgba(146,196,255,.9); outline-offset: 3px; }
 .login-dock.is-pending { visibility: hidden; }
 .login-dock.is-signed-in:hover { background: rgba(255,104,96,.34); color: #fff; }
 .manage-dock { bottom: calc(var(--dock-inset) + var(--dock-size) + var(--dock-gap)); }
 .manage-dock.active { background: rgba(111,170,255,.36); color: #f3f8ff; box-shadow: 0 10px 26px rgba(10,15,20,.2), inset 0 0 0 1px rgba(176,210,255,.42); }
 .manage-dock.active:hover { background: rgba(126,180,255,.46); }
-/* 管理菜单从「管理」按钮正上方向上展开，按钮竖排、右边缘与按钮对齐 */
-.manage-actions { position: fixed; right: var(--dock-inset); bottom: calc(var(--dock-inset) + 2 * (var(--dock-size) + var(--dock-gap))); z-index: 40; width: max-content; min-width: 136px; max-height: calc(100vh - 2 * var(--dock-inset) - 2 * (var(--dock-size) + var(--dock-gap))); padding: 5px; display: flex; flex-direction: column; align-items: stretch; gap: 2px; overflow-y: auto; scrollbar-width: none; border-radius: 14px; background: rgba(235,240,242,.16); box-shadow: 0 10px 26px rgba(10,15,20,.2); backdrop-filter: blur(18px) saturate(125%); transform-origin: right bottom; animation: manage-actions-in 220ms cubic-bezier(.22,1,.36,1); }
-.manage-actions::-webkit-scrollbar { display: none; }
-.manage-actions button { flex: 0 0 auto; min-height: calc(var(--dock-size) - 6px); padding: 0 12px; border: 0; border-radius: 10px; display: flex; align-items: center; justify-content: flex-start; gap: 8px; color: rgba(255,255,255,.9); background: transparent; font-size: 13px; font-weight: 650; text-shadow: 0 1px 5px rgba(0,0,0,.35); white-space: nowrap; cursor: pointer; transition: background-color 140ms ease-out, color 140ms ease-out, opacity 140ms ease-out; }
-.manage-actions button:hover:not(:disabled) { background: rgba(255,255,255,.14); color: #fff; }
-.manage-actions button:active:not(:disabled) { background: rgba(255,255,255,.2); }
-.manage-actions button:disabled { opacity: .42; cursor: not-allowed; }
-.manage-actions button:focus-visible { outline: 2px solid rgba(146,196,255,.9); outline-offset: -2px; }
-.manage-actions-count { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; display: inline-grid; place-items: center; background: rgba(111,170,255,.5); color: #fff; font-size: 11px; font-weight: 750; font-variant-numeric: tabular-nums; text-shadow: none; }
+/* 管理菜单从「管理」按钮正上方向上展开：每个操作和角落按钮一样大，竖排、右边缘对齐；名称在悬停或键盘聚焦时出现在左侧 */
+.manage-actions { position: fixed; right: var(--dock-inset); bottom: calc(var(--dock-inset) + 2 * (var(--dock-size) + var(--dock-gap))); z-index: 40; display: flex; flex-direction: column; gap: var(--dock-gap); }
+/* 从离「管理」按钮最近的一项开始依次弹出 */
+.manage-action { position: relative; animation: manage-action-in 260ms cubic-bezier(.22,1,.36,1) backwards; }
+.manage-action:nth-last-child(2) { animation-delay: 30ms; }
+.manage-action:nth-last-child(3) { animation-delay: 60ms; }
+.manage-action:nth-last-child(4) { animation-delay: 90ms; }
+.manage-action:disabled { background: rgba(235,240,242,.09); cursor: not-allowed; }
+.manage-action:disabled svg { opacity: .4; }
+.manage-action-label { position: absolute; top: 50%; right: calc(100% + 10px); height: 30px; padding: 0 11px; border-radius: 10px; display: flex; align-items: center; color: #fff; background: rgba(17,23,30,.86); box-shadow: 0 6px 18px rgba(10,15,20,.24); font-size: 13px; font-weight: 650; white-space: nowrap; opacity: 0; transform: translate(6px, -50%); pointer-events: none; transition: opacity 140ms ease-out, transform 200ms cubic-bezier(.22,1,.36,1); }
+.manage-action:focus-visible .manage-action-label { opacity: 1; transform: translate(0, -50%); }
+@media (hover: hover) { .manage-action:hover .manage-action-label { opacity: 1; transform: translate(0, -50%); } }
+.manage-action-badge { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; display: grid; place-items: center; color: #fff; background: #2f6fd6; box-shadow: 0 2px 6px rgba(10,15,20,.3); font-size: 11px; font-weight: 750; line-height: 1; font-variant-numeric: tabular-nums; pointer-events: none; }
 .manage-toast { display: flex; align-items: center; gap: 10px; position: fixed; right: calc(var(--dock-inset) + var(--dock-size) + var(--dock-gap)); bottom: var(--dock-inset); z-index: 40; max-width: min(360px, calc(100vw - 2 * var(--dock-inset) - var(--dock-size) - var(--dock-gap))); height: var(--dock-size); margin: 0; padding: 0 14px; border-radius: 14px; overflow: hidden; color: rgba(255,255,255,.92); background: rgba(20,27,35,.5); font-size: 13px; line-height: var(--dock-size); text-shadow: 0 1px 4px rgba(0,0,0,.35); white-space: nowrap; text-overflow: ellipsis; backdrop-filter: blur(14px); opacity: 0; transform: translateX(8px); pointer-events: none; transition: opacity 180ms ease-out, transform 240ms cubic-bezier(.22,1,.36,1); }
 .manage-toast.visible { opacity: 1; transform: none; }
 .manage-toast.error { color: #ffe3de; background: rgba(96,32,32,.62); }
@@ -108,7 +114,16 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .manage-toast-action:focus-visible { outline: 2px solid rgba(146,196,255,.9); outline-offset: 1px; }
 .manage-toast-action:disabled { opacity: .5; cursor: wait; }
 .manage-ai-button svg { color: #b9d7ff; }
-@keyframes manage-actions-in { from { opacity: 0; transform: translateY(10px) scale(.97); } }
+@keyframes manage-action-in { from { opacity: 0; transform: translateY(12px) scale(.88); } }
+@keyframes manage-action-in-row { from { opacity: 0; transform: translateX(12px) scale(.88); } }
+/* 窗口太矮、竖排放不下时，改成在「管理」按钮左侧横排，名称显示在按钮上方 */
+@media (max-height: 400px) {
+  .manage-actions { flex-direction: row; right: calc(var(--dock-inset) + var(--dock-size) + var(--dock-gap)); bottom: calc(var(--dock-inset) + var(--dock-size) + var(--dock-gap)); }
+  .manage-action { animation-name: manage-action-in-row; }
+  .manage-action-label { top: auto; right: 50%; bottom: calc(100% + 8px); transform: translate(50%, 6px); }
+  .manage-action:focus-visible .manage-action-label, .manage-action:hover .manage-action-label { transform: translate(50%, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .manage-action { animation: none; } }
 .header-actions { display: flex; gap: 6px; }
 .icon-button, .soft-button, .primary-button, .danger-button {
   min-height: 44px; border: 0; border-radius: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; cursor: pointer; font-weight: 700; transition: transform 120ms ease-out, background-color 160ms ease-out, color 160ms ease-out, box-shadow 160ms ease-out;

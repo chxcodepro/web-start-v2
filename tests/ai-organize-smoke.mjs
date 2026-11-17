@@ -208,7 +208,8 @@ function readPrompt(path, body) {
   return { format: "openai", system: body.messages.find((message) => message.role === "system").content, user: body.messages.find((message) => message.role === "user").content };
 }
 
-function checkRequest(headers, path, body) {
+// maxTokens：规划新分组只需要很短的输出（接口用 2000），归类请求用 16000
+function checkRequest(headers, path, body, maxTokens) {
   const problem = (message) => aiProblems.push(message);
   if (provider === "anthropic") {
     if (!path.startsWith("/v1/messages")) problem(`路径不对：${path}`);
@@ -216,24 +217,24 @@ function checkRequest(headers, path, body) {
     if (!String(headers["anthropic-beta"] ?? "").includes("server-side-fallback-2026-07-01") || body.fallbacks !== "default") problem("没有启用服务端兜底");
     if (body.output_config?.effort !== "low") problem("effort 应为 low");
     if (body.output_config?.format?.type !== "json_schema" || !hasSchema(body.output_config.format.schema)) problem("没有使用结构化输出");
-    if (body.max_tokens !== 16000 || "temperature" in body || "thinking" in body) problem("max_tokens、temperature 或 thinking 不对");
+    if (body.max_tokens !== maxTokens || "temperature" in body || "thinking" in body) problem("max_tokens、temperature 或 thinking 不对");
   } else if (provider === "gemini") {
     if (path !== `/v1beta/models/${expected.model}:generateContent`) problem(`路径不对：${path}`);
     if (headers["x-goog-api-key"] !== "sk-smoke-test") problem("密钥请求头不对");
     const config = body.generationConfig ?? {};
     if (config.responseMimeType !== "application/json" || !hasSchema(config.responseJsonSchema)) problem("没有使用 JSON Schema 输出");
-    if (config.thinkingConfig?.thinkingLevel !== "LOW" || config.maxOutputTokens !== 16000) problem("thinkingLevel 或 maxOutputTokens 不对");
+    if (config.thinkingConfig?.thinkingLevel !== "LOW" || config.maxOutputTokens !== maxTokens) problem("thinkingLevel 或 maxOutputTokens 不对");
   } else {
     if (path !== "/chat/completions") problem(`路径不对：${path}`);
     if (headers.authorization !== "Bearer sk-smoke-test") problem("密钥请求头不对");
     if (provider === "deepseek") {
       if (body.thinking?.type !== "disabled") problem("没有关闭思考模式");
       if (body.response_format?.type !== "json_object") problem("没有开启 JSON 输出");
-      if (body.temperature !== 0.2 || body.max_tokens !== 16000) problem("temperature 或 max_tokens 不对");
+      if (body.temperature !== 0.2 || body.max_tokens !== maxTokens) problem("temperature 或 max_tokens 不对");
     } else {
       const format = body.response_format;
       if (format?.type !== "json_schema" || format.json_schema?.strict !== true || !hasSchema(format.json_schema?.schema)) problem("没有使用结构化输出");
-      if (body.max_completion_tokens !== 16000 || "max_tokens" in body) problem("应使用 max_completion_tokens");
+      if (body.max_completion_tokens !== maxTokens || "max_tokens" in body) problem("应使用 max_completion_tokens");
       if (body.reasoning_effort !== "low") problem("推理强度应为 low");
       if ("thinking" in body || "temperature" in body) problem("不应发送 thinking 或 temperature");
     }
@@ -273,10 +274,11 @@ const ai = createServer(async (request, response) => {
     const lines = prompt.user.split("\n");
     const groups = JSON.parse(lines[1]);
     const items = JSON.parse(lines.at(-1));
-    checkRequest(request.headers, path, body);
+    const planning = /最多提议 5 个新分组/.test(prompt.system);
+    checkRequest(request.headers, path, body, planning ? 2000 : 16000);
     if (!/json/.test(prompt.system)) aiProblems.push("系统提示词缺少 json 字样");
     // 「允许新建分组」的规划请求：提议一个新分组，外加一个和现有分组重名的（服务端应去掉）
-    if (/最多提议 5 个新分组/.test(prompt.system)) {
+    if (planning) {
       planRequests.push(items.length);
       const plan = { groups: [{ name: "影音娱乐", description: "家庭影音和流媒体", count: 2 }, { name: "开发工具", description: "和现有分组重名", count: 3 }] };
       response.end(JSON.stringify(replyBody(prompt.format, JSON.stringify(plan), false)));
@@ -349,6 +351,17 @@ let browser;
 let page;
 const browserErrors = [];
 const sectionCount = (name) => page.locator(".editable-section").filter({ has: page.locator(".editable-title-button", { hasText: new RegExp(`^${name}$`) }) }).locator(".section-count");
+// 管理菜单展开后，每个操作都应和角落的「管理」按钮一样大，并且右边缘对齐
+async function checkManageActions() {
+  await page.locator(".manage-actions").evaluate((node) => Promise.all(node.getAnimations({ subtree: true }).map((animation) => animation.finished)));
+  const dock = await page.locator(".manage-dock").boundingBox();
+  const boxes = await page.locator(".manage-action").evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON()));
+  assert.equal(boxes.length, 4, "管理菜单应有 4 个操作");
+  for (const box of boxes) {
+    assert.ok(Math.abs(box.width - dock.width) < 0.5 && Math.abs(box.height - dock.height) < 0.5, `管理菜单的操作应和角落按钮一样大：${box.width}×${box.height}，按钮 ${dock.width}×${dock.height}`);
+    assert.ok(Math.abs(box.right - (dock.x + dock.width)) < 0.5, "管理菜单的操作应和角落按钮右对齐");
+  }
+}
 
 try {
   for (let attempt = 0; attempt < 90; attempt += 1) {
@@ -374,6 +387,22 @@ try {
   // ---------- Star：整理未分组 ----------
   await page.goto(`${base}/stars`);
   await page.getByRole("button", { name: "管理", exact: true }).click({ timeout: 60000 });
+  await checkManageActions();
+  assert.ok(await page.getByRole("button", { name: "移动（请先勾选）" }).isDisabled(), "没有勾选时「移动」不可用，名称里说明原因");
+  await page.getByRole("button", { name: "全选", exact: true }).click();
+  const moveAction = page.getByRole("button", { name: /^移动 \d+ 项$/ });
+  const moveLabel = await moveAction.locator(".manage-action-label").innerText();
+  assert.equal(await moveAction.locator(".manage-action-badge").innerText(), moveLabel.match(/\d+/)[0], "角标应显示勾选数量");
+  await moveAction.hover();
+  await page.waitForFunction(() => {
+    const label = document.querySelector(".manage-action:hover .manage-action-label");
+    return Boolean(label) && getComputedStyle(label).opacity === "1";
+  });
+  await delay(250);
+  await page.screenshot({ path: artifactPath("manage-actions-desktop.png") });
+  await page.getByRole("button", { name: "取消全选" }).click();
+  await page.mouse.move(0, 0);
+  console.log("PASS: 管理菜单的操作和角落按钮同尺寸、右对齐；悬停显示名称，勾选数量显示为角标");
   await page.getByRole("button", { name: "AI 整理" }).click();
   const dialog = page.getByRole("dialog", { name: "AI 整理" });
   await dialog.waitFor();
@@ -460,6 +489,8 @@ try {
 
   // ---------- 手机宽度下的审阅布局 ----------
   await page.setViewportSize({ width: 390, height: 844 });
+  await checkManageActions();
+  await page.screenshot({ path: artifactPath("manage-actions-mobile.png") });
   await page.getByRole("button", { name: "AI 整理" }).click();
   await dialog.getByRole("button", { name: "开始分析" }).click();
   await applyButton.waitFor({ timeout: 90000 });

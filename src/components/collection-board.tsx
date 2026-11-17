@@ -672,10 +672,11 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
     {canManage && <>
       <button type="button" className={`dock-button manage-dock ${managing ? "active" : ""}`} aria-pressed={managing} aria-label={managing ? "完成管理" : "管理"} title={managing ? "完成管理" : "管理"} onClick={() => { if (!managing) setStarSort("manual"); setManaging((value) => !value); setSelected(new Set()); setEditingItem(null); setEditingGroup(null); }}>{managing ? <Check size={19} aria-hidden="true" /> : <Settings2 size={18} aria-hidden="true" />}</button>
       {managing && <div className="manage-actions" role="toolbar" aria-label="管理操作">
-        <button type="button" onClick={() => setDialog({ type: "add-group" })}><Plus size={16} aria-hidden="true" />分组</button>
-        <button type="button" onClick={() => setSelected(allVisibleSelected ? new Set() : new Set(allVisibleIds))}>{allVisibleSelected ? <CheckSquare size={16} aria-hidden="true" /> : <Square size={16} aria-hidden="true" />}{allVisibleSelected ? "取消全选" : "全选"}</button>
-        <button type="button" disabled={!selected.size} onClick={() => setDialog({ type: "move" })}><FolderInput size={16} aria-hidden="true" />移动{selected.size > 0 && <span className="manage-actions-count">{selected.size}</span>}</button>
-        <button type="button" className="manage-ai-button" disabled={!hasItems || busy} onClick={() => { setMessage(""); setDialog({ type: "ai" }); }}><Sparkles size={16} aria-hidden="true" />AI 整理</button>
+        {/* 每个操作都是和角落按钮同尺寸的图标按钮，名称放在悬停或聚焦时才出现的标签里，同时作为按钮的可访问名称 */}
+        <button type="button" className="manage-action" onClick={() => setDialog({ type: "add-group" })}><Plus size={19} aria-hidden="true" /><span className="manage-action-label">新建分组</span></button>
+        <button type="button" className="manage-action" onClick={() => setSelected(allVisibleSelected ? new Set() : new Set(allVisibleIds))}>{allVisibleSelected ? <CheckSquare size={18} aria-hidden="true" /> : <Square size={18} aria-hidden="true" />}<span className="manage-action-label">{allVisibleSelected ? "取消全选" : "全选"}</span></button>
+        <button type="button" className="manage-action" disabled={!selected.size} onClick={() => setDialog({ type: "move" })}><FolderInput size={18} aria-hidden="true" /><span className="manage-action-label">{selected.size ? `移动 ${selected.size} 项` : "移动（请先勾选）"}</span>{selected.size > 0 && <span className="manage-action-badge" aria-hidden="true">{selected.size > 99 ? "99+" : selected.size}</span>}</button>
+        <button type="button" className="manage-action manage-ai-button" disabled={!hasItems || busy} onClick={() => { setMessage(""); setDialog({ type: "ai" }); }}><Sparkles size={18} aria-hidden="true" /><span className="manage-action-label">AI 整理</span></button>
       </div>}
       <div className={`manage-toast ${message && !dialog ? "visible" : ""} ${isErrorMessage(message) ? "error" : ""} ${undoVisible ? "has-action" : ""}`} role="status">
         <span className="manage-toast-text">{dialog ? "" : message}</span>
