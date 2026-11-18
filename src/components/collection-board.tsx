@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type FormEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type FormEvent, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ArrowDown, ArrowDownUp, ArrowLeft, ArrowRight, Check, CheckSquare, ChevronDown, ClipboardPaste, Clock3, Download, Edit3, FileArchive, FolderInput,
   Github, GripVertical, LoaderCircle, MoreHorizontal, Plus, Search, Settings2, Sparkles, Square, Trash2, Undo2, X
@@ -12,6 +12,7 @@ import { ManageDialog } from "@/components/manage-dialog";
 import { StarNoteField } from "@/components/star-note-field";
 import { SyncStarsButton } from "@/components/sync-stars-button";
 import { applyItemMoves, insertGroups, moveRequests, revertItemMoves, sourceOrders, type BoardGroup, type BoardItem, type BoardKind, type ItemMove } from "@/lib/board-model";
+import { captureScrollAnchor, restoreScrollAnchor, type ScrollAnchor } from "@/lib/scroll-anchor";
 import type { BookmarkGroup, GithubGroup } from "@/lib/types";
 
 type SourceGroups = BookmarkGroup[] | GithubGroup[];
@@ -210,8 +211,17 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
   const [message, setMessage] = useState("");
   const [undo, setUndo] = useState<UndoRecord | null>(null);
   const cardNodes = useRef(new Map<string, HTMLElement>());
+  const boardRef = useRef<HTMLDivElement>(null);
+  const scrollAnchor = useRef<ScrollAnchor | null>(null);
   const metadataRequest = useRef(0);
   const downloadRequest = useRef(0);
+
+  // 进入或退出管理后、浏览器绘制前，把切换前正在看的分组标题或卡片挪回原处
+  useLayoutEffect(() => {
+    const anchor = scrollAnchor.current;
+    scrollAnchor.current = null;
+    if (anchor) restoreScrollAnchor(anchor);
+  }, [managing]);
 
   const closeDialog = useCallback(() => { metadataRequest.current += 1; downloadRequest.current += 1; setDialog(null); setMessage(""); setBookmarkLookup(false); setDownloadLoading(false); }, []);
   // AI 整理关闭时保留提示，应用后的「已整理 N 项」和撤销按钮要在对话框关掉后显示
@@ -312,6 +322,16 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
         ], { duration: 240, easing: "cubic-bezier(.2,.8,.2,1)" });
       });
     });
+  }
+
+  function toggleManaging() {
+    // 切换会改变卡片高度，先记下正在看的位置，切换后由上面的 useLayoutEffect 挪回去。
+    // Star 进入管理时排序会切回自定义、卡片会换位置，这时只保证分组本身留在原处
+    const resorting = !managing && kind === "github" && starSort !== "manual";
+    scrollAnchor.current = boardRef.current ? captureScrollAnchor(boardRef.current, resorting) : null;
+    if (!managing) setStarSort("manual");
+    setManaging((value) => !value);
+    setSelected(new Set()); setEditingItem(null); setEditingGroup(null);
   }
 
   function beginItemEdit(item: BoardItem) {
@@ -670,7 +690,7 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
     </section>}
 
     {canManage && <>
-      <button type="button" className={`dock-button manage-dock ${managing ? "active" : ""}`} aria-pressed={managing} aria-label={managing ? "完成管理" : "管理"} title={managing ? "完成管理" : "管理"} onClick={() => { if (!managing) setStarSort("manual"); setManaging((value) => !value); setSelected(new Set()); setEditingItem(null); setEditingGroup(null); }}>{managing ? <Check size={19} aria-hidden="true" /> : <Settings2 size={18} aria-hidden="true" />}</button>
+      <button type="button" className={`dock-button manage-dock ${managing ? "active" : ""}`} aria-pressed={managing} aria-label={managing ? "完成管理" : "管理"} title={managing ? "完成管理" : "管理"} onClick={toggleManaging}>{managing ? <Check size={19} aria-hidden="true" /> : <Settings2 size={18} aria-hidden="true" />}</button>
       {managing && <div className="manage-actions" role="toolbar" aria-label="管理操作">
         {/* 每个操作都是和角落按钮同尺寸的图标按钮，名称放在悬停或聚焦时才出现的标签里，同时作为按钮的可访问名称 */}
         <button type="button" className="manage-action" onClick={() => setDialog({ type: "add-group" })}><Plus size={19} aria-hidden="true" /><span className="manage-action-label">新建分组</span></button>
@@ -684,7 +704,7 @@ export function CollectionBoard({ kind, groups: sourceGroups, canManage }: {
       </div>
     </>}
 
-    {visibleGroups.length ? <div className={`home-layout collection-board ${managing ? "is-managing" : ""} ${canManage ? "can-drag" : ""}`}>
+    {visibleGroups.length ? <div ref={boardRef} className={`home-layout collection-board ${managing ? "is-managing" : ""} ${canManage ? "can-drag" : ""}`}>
       <GroupSidebar groups={visibleGroups.map(({ id, name }) => ({ id, name }))} canDropItems={Boolean(draggedItem)} onItemDrop={(groupId) => void dropItem(groupId)} />
       <div className="group-content">{visibleGroups.map((group) => {
         const limitKey = `${group.id}:${deferredQuery.trim().toLowerCase()}`;

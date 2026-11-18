@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bookmark, Clipboard, Github, Power, UserRound } from "lucide-react";
 import { signIn, signOut } from "next-auth/react";
+import { SCROLL_COMPENSATION_EVENT } from "@/lib/scroll-anchor";
 
 export function SiteHeader({ authEnabled }: { authEnabled: boolean }) {
   const pathname = usePathname();
@@ -31,9 +32,13 @@ export function SiteHeader({ authEnabled }: { authEnabled: boolean }) {
     const onScroll = () => {
       if (!frame) frame = window.requestAnimationFrame(update);
     };
+    // 页面为了让内容留在原位自动修正的滚动不是用户在滚，从比较基准里扣掉，顶栏保持原样
+    const onCompensation = (event: Event) => { previousY += (event as CustomEvent<number>).detail; };
     window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener(SCROLL_COMPENSATION_EVENT, onCompensation);
     return () => {
       window.removeEventListener("scroll", onScroll);
+      window.removeEventListener(SCROLL_COMPENSATION_EVENT, onCompensation);
       if (frame) window.cancelAnimationFrame(frame);
     };
   }, []);

@@ -43,6 +43,8 @@ const makeGroup = (kind, name, sortOrder) => ({ id: randomUUID(), kind, name, so
 // 「智能家居」是用户事先建好的空分组，AI 应该能把条目放进去
 const starGroups = { tools: makeGroup("github", "开发工具", 0), ai: makeGroup("github", "AI 应用", 1), design: makeGroup("github", "设计素材", 2), home: makeGroup("github", "智能家居", 3) };
 const bookmarkGroups = { daily: makeGroup("bookmark", "日常使用", 0), design: makeGroup("bookmark", "设计", 1), reading: makeGroup("bookmark", "阅读", 2) };
+// 再加 5 组、每组 5 个书签，页面才够长：点分组导航跳到「阅读」时标题能停到顶部。书签一共 30 个，AI 整理「全部」时正好一批
+const extraBookmarkGroups = Array.from({ length: 5 }, (_, index) => makeGroup("bookmark", `收藏 ${index + 1}`, index + 3));
 let repoId = 1000;
 const makeStar = (fullName, groupId = null, sortOrder = 0) => ({
   id: randomUUID(), github_repo_id: repoId++, group_id: groupId, full_name: fullName, display_name: null,
@@ -59,7 +61,7 @@ const specials = ["ollama/ollama", "biomejs/biome", "excalidraw/excalidraw", "ho
 const ungroupedStars = [...specials, ...fillers, makeStar("esphome/esphome")];
 const makeBookmark = (title, url, groupId, sortOrder) => ({ id: randomUUID(), group_id: groupId, title, url, description: null, favicon_url: null, tags: [], sort_order: sortOrder, is_public: true });
 const tables = {
-  groups: [...Object.values(starGroups), ...Object.values(bookmarkGroups)],
+  groups: [...Object.values(starGroups), ...Object.values(bookmarkGroups), ...extraBookmarkGroups],
   github_stars: [
     makeStar("vercel/next.js", starGroups.tools.id, 0), makeStar("vitejs/vite", starGroups.tools.id, 1),
     makeStar("open-webui/open-webui", starGroups.ai.id, 0), makeStar("lucide-icons/lucide", starGroups.design.id, 0),
@@ -70,7 +72,8 @@ const tables = {
     makeBookmark("Figma", "https://www.figma.com/", bookmarkGroups.daily.id, 1),
     makeBookmark("Hacker News", "https://news.ycombinator.com/", bookmarkGroups.daily.id, 2),
     makeBookmark("Dribbble", "https://dribbble.com/", bookmarkGroups.design.id, 0),
-    makeBookmark("少数派", "https://sspai.com/", bookmarkGroups.reading.id, 0)
+    makeBookmark("少数派", "https://sspai.com/", bookmarkGroups.reading.id, 0),
+    ...extraBookmarkGroups.flatMap((group, groupIndex) => Array.from({ length: 5 }, (_, index) => makeBookmark(`站点 ${groupIndex + 1}-${index + 1}`, `https://site-${groupIndex + 1}-${index + 1}.example.test/`, group.id, index)))
   ]
 };
 const originalUngroupedOrder = ungroupedStars.map((row) => row.id);
@@ -373,6 +376,45 @@ async function checkManageActions() {
     assert.ok(Math.abs(box.right - (dock.x + dock.width)) < 0.5, "管理菜单的操作应和角落按钮右对齐");
   }
 }
+// 等滚动停下：连续 5 帧 scrollY 不变
+const scrollSettled = () => page.evaluate(() => new Promise((done) => {
+  let last = Number.NaN;
+  let still = 0;
+  const tick = () => {
+    still = window.scrollY === last ? still + 1 : 0;
+    last = window.scrollY;
+    if (still >= 5) done();
+    else requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}));
+// 点分组导航跳到某个分组：桌面上导航平时收成一条细边，先悬停展开；跳转结束后侧栏会去掉 is-jumping。
+// 分组标题应停在 scroll-margin-top 处，即顶栏（手机上还有分组条）下方
+async function jumpToGroup(groupId) {
+  await page.locator(".group-sidebar").hover({ timeout: 60000 });
+  await page.locator(`.group-sidebar a[href="#group-${groupId}"]`).click();
+  await page.waitForFunction(() => !document.querySelector(".collection-board.is-jumping"));
+  const { width, height } = page.viewportSize();
+  await page.mouse.move(width / 2, height / 2);
+  await scrollSettled();
+  const landed = await page.locator(`#group-${groupId}`).evaluate((node) => ({ top: node.getBoundingClientRect().top, line: Number.parseFloat(getComputedStyle(node).scrollMarginTop) }));
+  assert.ok(Math.abs(landed.top - landed.line) < 2, `跳转后分组应停在距顶部 ${landed.line}px 处，实际 ${landed.top}px`);
+}
+// 进入或退出管理：上方分组的卡片变高或变矮，跳到的分组标题应留在原位；顶栏也不应因为自动修正的滚动收起或弹出
+async function toggleManageInPlace(groupId) {
+  const dock = page.locator(".manage-dock");
+  const entering = await dock.getAttribute("aria-pressed") !== "true";
+  const action = entering ? "进入" : "退出";
+  const snapshot = () => page.locator(`#group-${groupId} > .section-heading`).evaluate((node) => ({ top: node.getBoundingClientRect().top, scrollY: window.scrollY, header: document.querySelector(".site-header").className }));
+  const before = await snapshot();
+  await dock.click();
+  await page.locator(`.manage-dock[aria-pressed="${entering}"]`).waitFor();
+  await scrollSettled();
+  const after = await snapshot();
+  assert.ok(Math.abs(after.top - before.top) < 1, `${action}管理后分组标题应留在原位：之前距顶部 ${before.top}px，之后 ${after.top}px`);
+  assert.ok(Math.abs(after.scrollY - before.scrollY) > 20, `${action}管理时上方分组的高度应该变了，否则这项检查测不到页面跳动`);
+  assert.equal(after.header, before.header, `${action}管理时顶栏不应收起或弹出`);
+}
 
 try {
   for (let attempt = 0; attempt < 90; attempt += 1) {
@@ -408,6 +450,12 @@ try {
   await page.mouse.move(720, 450);
   await page.waitForFunction(() => getComputedStyle(document.querySelector(".site-header")).opacity === "1");
   console.log("PASS: Star 工具栏和页面切换面板在同一水平线；分组导航展开时面板收起，收回后再出现");
+  // 跳到「智能家居」：它上面「设计素材」的卡片刚好露在顶栏下面，进入管理时会变高
+  await jumpToGroup(starGroups.home.id);
+  await toggleManageInPlace(starGroups.home.id);
+  await toggleManageInPlace(starGroups.home.id);
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  console.log("PASS: Star 页跳到分组后进入、退出管理，分组留在原位，顶栏不动");
   await page.getByRole("button", { name: "管理", exact: true }).click({ timeout: 60000 });
   await checkManageActions();
   assert.ok(await page.getByRole("button", { name: "移动（请先勾选）" }).isDisabled(), "没有勾选时「移动」不可用，名称里说明原因");
@@ -519,6 +567,11 @@ try {
   await page.locator(".group-sidebar").hover();
   await delay(300);
   assert.equal(await headerOpacity(), "1", "手机上悬停分组条时页面切换面板不应收起");
+  // 手机上标题停在吸顶的分组条下方；此时还在管理中，先退出再进入
+  await jumpToGroup(starGroups.home.id);
+  await toggleManageInPlace(starGroups.home.id);
+  await toggleManageInPlace(starGroups.home.id);
+  console.log("PASS: 手机上跳到分组后退出、进入管理，分组留在原位，顶栏不动");
   await page.getByRole("button", { name: "AI 整理" }).click();
   await dialog.getByRole("button", { name: "开始分析" }).click();
   await applyButton.waitFor({ timeout: 90000 });
@@ -570,9 +623,15 @@ try {
   // ---------- 书签：接口报错与勾选范围 ----------
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(base);
+  // 跳到「阅读」：进入管理时上面两组的卡片变高，末尾还多出「点击添加书签」
+  await jumpToGroup(bookmarkGroups.reading.id);
+  await toggleManageInPlace(bookmarkGroups.reading.id);
+  await toggleManageInPlace(bookmarkGroups.reading.id);
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  console.log("PASS: 书签页跳到分组后进入、退出管理，分组留在原位，顶栏不动");
   await page.getByRole("button", { name: "管理", exact: true }).click({ timeout: 60000 });
   await page.getByRole("button", { name: "AI 整理" }).click();
-  assert.ok(await dialog.getByRole("radio", { name: /全部 5 项/ }).isChecked());
+  assert.ok(await dialog.getByRole("radio", { name: /全部 30 项/ }).isChecked());
   failNextStatus = 401;
   await dialog.getByRole("button", { name: "开始分析" }).click();
   await dialog.getByRole("alert").filter({ hasText: "AI 接口密钥无效，请检查 AI_API_KEY" }).waitFor({ timeout: 60000 });
