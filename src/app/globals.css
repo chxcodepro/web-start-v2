@@ -13,6 +13,8 @@
   --dock-inset: 20px;
   --dock-size: 44px;
   --dock-gap: 10px;
+  /* 顶栏 sticky 的 top：页面在顶部时顶栏也会被往下推这么多，Star 工具栏对齐时要算上 */
+  --header-top: 12px;
 }
 
 * { box-sizing: border-box; }
@@ -70,7 +72,7 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   box-shadow: 0 18px 46px rgba(21, 32, 27, .14), inset 0 0 0 1px rgba(255,255,255,.2);
   backdrop-filter: blur(24px) saturate(135%);
 }
-.site-header { position: sticky; top: 12px; z-index: 40; padding-top: 16px; pointer-events: none; transform: translateY(0); opacity: 1; transition: transform 220ms cubic-bezier(.2,.8,.2,1), opacity 160ms ease-out; will-change: transform, opacity; }
+.site-header { position: sticky; top: var(--header-top); z-index: 40; padding-top: 16px; pointer-events: none; transform: translateY(0); opacity: 1; transition: transform 220ms cubic-bezier(.2,.8,.2,1), opacity 160ms ease-out; will-change: transform, opacity; }
 .site-header.nav-hidden:not(:focus-within) { transform: translateY(calc(-100% - 24px)); opacity: 0; }
 .site-header.nav-hidden:not(:focus-within) .header-inner { pointer-events: none; }
 .header-inner { width: fit-content; min-height: 52px; border: 0; border-radius: 14px; display: flex; align-items: center; padding: 4px; background: rgba(235,240,242,.16); box-shadow: 0 10px 30px rgba(10,15,20,.12); pointer-events: auto; }
@@ -195,6 +197,11 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
 /* 侧栏展开时内容区用 transform 右移：不改宽度就不会重新排版，点分组跳转后移开鼠标，位置也不会再变 */
 .group-content { min-width: 0; transition: transform 180ms ease-out; }
 .home-layout:has(.group-sidebar:hover) .group-content, .home-layout:has(.group-sidebar:focus-within) .group-content, .home-layout:has(.group-sidebar.drag-active) .group-content { transform: translateX(124px); }
+/* 分组导航展开时，左上角的页面切换面板向上收起让开，导航收回后再落回来（动效和滚动时隐藏一致）；手机上导航是横排的分组条，不会展开，不用让 */
+@media (min-width: 541px) {
+  body:has(.group-sidebar:is(:hover, :focus-within, .drag-active)) .site-header:not(:focus-within) { transform: translateY(calc(-100% - 24px)); opacity: 0; }
+  body:has(.group-sidebar:is(:hover, :focus-within, .drag-active)) .site-header:not(:focus-within) .header-inner { pointer-events: none; }
+}
 .group-content .section { scroll-margin-top: 104px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .group-content .section:focus { outline: none; }
 .group-content .editable-section { content-visibility: auto; contain-intrinsic-size: auto 620px; }
@@ -218,7 +225,8 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
 @keyframes bookmark-title-scroll { to { transform: translateX(calc(-1 * var(--title-overflow, 0px))); } }
 .card-description { display: none; }
 
-.star-toolbar { position: relative; z-index: 30; min-height: 52px; margin-top: -52px; padding: 0 0 34px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+/* 工具栏上移一个顶栏高度，和页面切换面板排在同一行；顶栏被 sticky 往下推了 --header-top，这段要让回来，否则会高出一截 */
+.star-toolbar { position: relative; z-index: 30; min-height: 52px; margin-top: calc(var(--header-top) - 52px); padding: 0 0 34px; display: flex; align-items: center; justify-content: center; gap: 10px; }
 .star-search { width: min(520px, calc(100% - 150px)); min-height: 52px; border: 0; border-radius: 26px; padding: 0 18px; display: flex; align-items: center; gap: 10px; color: rgba(255,255,255,.82); background: rgba(224,230,235,.18); box-shadow: 0 12px 32px rgba(8,13,18,.2); transition: background-color 160ms ease-out, box-shadow 160ms ease-out, transform 160ms ease-out; }
 .star-search:focus-within { background: rgba(218,230,242,.22); box-shadow: 0 12px 34px rgba(6,14,24,.24), 0 0 24px rgba(74,157,255,.24); transform: scale(1.01); }
 .star-search input { width: 100%; min-width: 0; height: 48px; border: 0; outline: 0; background: transparent; color: rgba(255,255,255,.96); font-size: 15px; }
@@ -629,7 +637,7 @@ kbd { padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.55); b
   .repo-name { font-size: 14px; }
   .star-inline-meta { font-size: 11.5px; }
 
-  .star-toolbar { min-height: 58px; margin-top: -58px; padding-bottom: 42px; }
+  .star-toolbar { min-height: 58px; margin-top: calc(var(--header-top) - 58px); padding-bottom: 42px; }
   .star-search { width: min(600px, calc(100% - 164px)); min-height: 58px; border-radius: 29px; padding-inline: 20px; }
   .star-search input { height: 54px; font-size: 16px; }
   .star-sync-button { min-height: 52px; border-radius: 26px; padding-inline: 18px; font-size: 15px; }

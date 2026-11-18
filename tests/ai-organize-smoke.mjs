@@ -351,6 +351,17 @@ let browser;
 let page;
 const browserErrors = [];
 const sectionCount = (name) => page.locator(".editable-section").filter({ has: page.locator(".editable-title-button", { hasText: new RegExp(`^${name}$`) }) }).locator(".section-count");
+const headerOpacity = () => page.evaluate(() => getComputedStyle(document.querySelector(".site-header")).opacity);
+// Star 工具栏的搜索栏、排序和同步按钮应和左上角的页面切换面板在同一水平线上
+async function checkToolbarAlignment() {
+  const centers = await page.evaluate(() => Object.fromEntries([".header-inner", ".star-search", ".star-sort", ".star-sync-button"].map((selector) => {
+    const box = document.querySelector(selector).getBoundingClientRect();
+    return [selector, box.top + box.height / 2];
+  })));
+  for (const [selector, center] of Object.entries(centers)) {
+    assert.ok(Math.abs(center - centers[".header-inner"]) < 1, `${selector} 应和页面切换面板在同一水平线：中线 ${center}，面板 ${centers[".header-inner"]}`);
+  }
+}
 // 管理菜单展开后，每个操作都应和角落的「管理」按钮一样大，并且右边缘对齐
 async function checkManageActions() {
   await page.locator(".manage-actions").evaluate((node) => Promise.all(node.getAnimations({ subtree: true }).map((animation) => animation.finished)));
@@ -386,6 +397,17 @@ try {
 
   // ---------- Star：整理未分组 ----------
   await page.goto(`${base}/stars`);
+  await page.getByPlaceholder("搜索 GitHub Star").waitFor({ timeout: 60000 });
+  await checkToolbarAlignment();
+  await page.screenshot({ path: artifactPath("toolbar-desktop.png"), clip: { x: 0, y: 0, width: 1440, height: 120 } });
+  // 分组导航展开时页面切换面板收起，收回后再出现
+  await page.locator(".group-sidebar").hover();
+  await page.waitForFunction(() => getComputedStyle(document.querySelector(".site-header")).opacity === "0");
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".header-inner")).pointerEvents), "none", "收起的面板不应挡住点击");
+  await page.screenshot({ path: artifactPath("sidebar-open-desktop.png") });
+  await page.mouse.move(720, 450);
+  await page.waitForFunction(() => getComputedStyle(document.querySelector(".site-header")).opacity === "1");
+  console.log("PASS: Star 工具栏和页面切换面板在同一水平线；分组导航展开时面板收起，收回后再出现");
   await page.getByRole("button", { name: "管理", exact: true }).click({ timeout: 60000 });
   await checkManageActions();
   assert.ok(await page.getByRole("button", { name: "移动（请先勾选）" }).isDisabled(), "没有勾选时「移动」不可用，名称里说明原因");
@@ -491,6 +513,12 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await checkManageActions();
   await page.screenshot({ path: artifactPath("manage-actions-mobile.png") });
+  // 手机上分组导航是横排的分组条，不会展开，页面切换面板不应跟着收起
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForFunction(() => getComputedStyle(document.querySelector(".site-header")).opacity === "1");
+  await page.locator(".group-sidebar").hover();
+  await delay(300);
+  assert.equal(await headerOpacity(), "1", "手机上悬停分组条时页面切换面板不应收起");
   await page.getByRole("button", { name: "AI 整理" }).click();
   await dialog.getByRole("button", { name: "开始分析" }).click();
   await applyButton.waitFor({ timeout: 90000 });
